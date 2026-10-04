@@ -48,7 +48,7 @@ title/         칭호 / 업적 진행도
 <Feature>Definition.java
 ```
 
-모든 기능에 모든 파일이 필요한 것은 아닙니다.
+모든 기능에 모든 파일이 필요한 것은 아니다.
 
 - 이벤트만 필요: Listener
 - 규칙 필요: Service
