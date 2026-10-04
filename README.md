@@ -1,39 +1,32 @@
-# RPGCore 0.4.9 전체 설계 문서
+# RPGCore 0.4.9 개발 구조 문서
 
 > 기준 버전: **RPGCore 0.4.9**  
 > 기준 서버: **Paper 26.2 계열**  
 > 기준 환경: **Ubuntu 24.04 / Temurin JDK 25 / MariaDB**  
-> 문서 목적: 현재까지 개발 완료된 RPGCore 0.4.9의 서버 구조, 핵심 시스템, 데이터 흐름, 콘텐츠 구성, 리소스팩 파이프라인, 배포 및 운영 기준을 한 문서에 정리한다.
+> 프로젝트 루트: **`/srv/minecraft`**  
+> 문서 목적: 게임 내부 콘텐츠 설명은 최소화하고, RPGCore 0.4.9의 **개발 구조, 코드 구성, 데이터 계층, 외부 의존성, 빌드·배포, 리소스팩 파이프라인, 운영 원칙**을 정리한다.
 
 ---
 
 ## 1. 프로젝트 개요
 
-RPGCore는 Paper 26.2 기반 Minecraft RPG 서버의 핵심 시스템을 담당하는 커스텀 플러그인이다.
+RPGCore는 Paper 기반 Minecraft RPG 서버의 핵심 기능을 담당하는 커스텀 플러그인이다.
 
-주요 목표는 다음과 같다.
+설계의 중심은 개별 콘텐츠 설명이 아니라 다음 개발 원칙에 있다.
 
-- 최대 레벨 99의 성장 시스템
-- 전사 / 마법사 직업 시스템
-- 커스텀 스킬
-- 고정형 던전 및 웨이브 시스템
-- 커스텀 무기 / 방어구 / 장비
-- RPG 스탯 및 전투 계산
-- HUD / 이름표 / 칭호 표시
-- NPC 기반 상점 및 관리 기능
-- 가구 구매 / 설치 / 착석
-- 경마 / 슬롯머신
-- 칭호 및 업적 기반 칭호 해금
-- MariaDB 기반 영구 데이터 저장
-- 서버 리소스팩 자동 조합 및 배포
+- RPGCore가 핵심 게임 규칙과 플레이어 데이터의 최종 소유자가 된다.
+- MariaDB를 영구 데이터 저장소로 사용한다.
+- Bukkit / Paper API 접근과 DB 작업의 실행 스레드를 분리한다.
+- 외부 플러그인은 표시, 모델, HUD, NPC, 경제, 리소스 생성 등의 보조 계층으로 사용한다.
+- 운영 서버와 개발 소스를 분리한다.
+- 리소스팩은 여러 외부 소스를 직접 배포하지 않고 RPGCore 최종 팩으로 조합한다.
+- 운영 변경은 백업 → 수정 → 빌드 → 배포 → 로그 확인 → 인게임 검증 순서로 수행한다.
 
-RPGCore는 외부 플러그인을 보조적으로 활용하지만, 핵심 게임 규칙과 플레이어 데이터의 최종 소유자는 RPGCore로 유지한다.
+현재 프로젝트에는 성장, 직업, 스킬, 전투, 아이템, 던전, NPC, 경제, 칭호, 업적, 가구, 게임형 콘텐츠 등의 모듈이 존재하지만, 이 문서에서는 각 게임 규칙의 세부 수치나 플레이 방식은 다루지 않는다.
 
 ---
 
-## 2. 운영 환경
-
-### 2.1 서버
+## 2. 개발 환경
 
 ```text
 OS              Ubuntu 24.04
@@ -44,21 +37,27 @@ Database        MariaDB
 Build           Gradle 9.6.1
 ```
 
-Java 실행 경로 기준:
+Java:
 
 ```text
 /usr/lib/jvm/temurin-25-jdk-amd64/bin/java
 ```
 
-운영 JVM 메모리 기준:
+운영 JVM 기준:
 
 ```text
 -Xms8G -Xmx12G
 ```
 
+Paper API 기준:
+
+```text
+api-version: 26.2
+```
+
 ---
 
-## 3. 주요 디렉토리 구조
+## 3. 전체 디렉토리 구조
 
 프로젝트 루트:
 
@@ -66,1123 +65,360 @@ Java 실행 경로 기준:
 /srv/minecraft
 ```
 
-핵심 경로:
+주요 구조:
 
 ```text
 /srv/minecraft/
-├── server/
+├── server/                     # 운영 Paper 서버
 ├── plugins-source/
-│   └── RPGCore/
+│   └── RPGCore/                # RPGCore 개발 소스
 ├── resourcepacks/
-│   ├── rpgcore/
-│   ├── source-models/
-│   └── rpgcore-0.4.9.zip
-├── backups/
-├── scripts/
-└── redeploy-resourcepack.py
+│   ├── rpgcore/                # 최종 리소스팩 소스
+│   ├── source-models/          # 외부/원본 모델 보관
+│   └── rpgcore-0.4.9.zip       # 배포 리소스팩
+├── backups/                    # 모든 백업
+├── scripts/                    # 관리 스크립트
+└── redeploy-resourcepack.py    # 리소스팩 배포 스크립트
 ```
 
-RPGCore 소스:
+핵심 경로:
 
 ```text
-/srv/minecraft/plugins-source/RPGCore
+Source      /srv/minecraft/plugins-source/RPGCore
+Server      /srv/minecraft/server
+Plugin      /srv/minecraft/server/plugins/RPGCore-0.4.9.jar
+Backup      /srv/minecraft/backups
+Pack Source /srv/minecraft/resourcepacks/rpgcore
+Pack ZIP    /srv/minecraft/resourcepacks/rpgcore-0.4.9.zip
 ```
-
-운영 서버:
-
-```text
-/srv/minecraft/server
-```
-
-운영 플러그인:
-
-```text
-/srv/minecraft/server/plugins/RPGCore-0.4.9.jar
-```
-
-백업:
-
-```text
-/srv/minecraft/backups
-```
-
-### 운영 원칙
-
-- 소스 디렉토리 안에 `.bak` 파일을 만들지 않는다.
-- 모든 백업은 `/srv/minecraft/backups` 아래에 생성한다.
-- 운영 서버 파일 수정 전 백업한다.
-- 대규모 자동 정리 / JSON 일괄 삭제 / 구조 재배치는 금지한다.
-- 정상 동작 중인 리소스팩 경로는 임의로 변경하지 않는다.
 
 ---
 
-## 4. 빌드 및 배포
+## 4. RPGCore 프로젝트 구조
 
-### 4.1 빌드
-
-```bash
-cd /srv/minecraft/plugins-source/RPGCore
-./gradlew clean build
-```
-
-출력:
+기본 Gradle 프로젝트:
 
 ```text
-build/libs/RPGCore-0.4.9.jar
+RPGCore/
+├── src/
+│   └── main/
+│       ├── java/
+│       │   └── com/hcs/rpgcore/
+│       └── resources/
+├── gradle/
+│   └── wrapper/
+├── build.gradle.kts
+├── settings.gradle.kts
+├── gradle.properties
+├── gradlew
+└── gradlew.bat
 ```
 
-### 4.2 배포
-
-운영 대상:
+리소스:
 
 ```text
-/srv/minecraft/server/plugins/RPGCore-0.4.9.jar
+src/main/resources/
+├── plugin.yml
+├── config.yml
+└── database.yml        # 운영 비밀정보, Git 제외
 ```
 
-배포 원칙:
+Git 배포본에서는 실제 DB 설정 대신 다음과 같은 예제 파일을 사용한다.
 
-1. 기존 운영 JAR 백업
-2. 서버 중지
-3. 새 JAR 복사
-4. SHA256 비교
-5. 서버 시작
-6. startup log 확인
-7. 인게임 기능 테스트
+```text
+database.example.yml
+```
 
 ---
 
-## 5. RPGCore 플러그인 구조
+## 5. Java 패키지 구조
 
-RPGCore는 Paper 플러그인으로 동작하며 `api-version: 26.2`를 사용한다.
+현재 RPGCore는 기능 단위 패키지 구조를 사용한다.
 
-주요 외부 의존성:
-
-- BetterModel
-- PlaceholderAPI
-- Vault
-- Citizens
-- ItemsAdder
-- BetterHud
-- MythicMobs
-- MythicArmors
-- ModelEngine
-- WorldEdit
-- WorldGuard
-- CraftEngine 계열 리소스
-
-운영 플러그인 구성에는 다음이 포함된다.
+대표 구조:
 
 ```text
-BetterHud
-Chairs
-Chunky
-Citizens
-CustomCrops
-EternalEconomy / Vault 계열 경제
-ItemsAdder
-ModelEngine
-MythicArmors
-MythicMobs
-PlaceholderAPI
-ProtocolLib
-RPGCore
-VanillaFurniture
-Vault
-BetterModel
-CraftEngine
-WorldEdit
-WorldGuard
+com.hcs.rpgcore
+├── boss/
+├── check/
+├── classjob/
+├── combat/
+├── command/
+├── craft/
+├── database/
+├── dismantle/
+├── dungeon/
+├── elixir/
+├── enchant/
+├── furniture/
+├── horse/
+├── hud/
+├── item/
+├── level/
+├── listener/
+├── locator/
+├── mana/
+├── market/
+├── mob/
+├── placeholder/
+├── player/
+├── runtime/
+├── shop/
+├── skill/
+├── slot/
+├── starter/
+├── stat/
+├── storage/
+└── title/
 ```
 
-GriefPrevention은 0.4.9 운영 후 비활성화되었다.
+각 패키지는 가능한 한 다음 책임 중 하나를 담당한다.
+
+```text
+Listener       Paper 이벤트 수신
+Service        비즈니스 로직
+Repository     DB 접근
+Factory        Bukkit ItemStack 등 객체 생성
+Task           반복 작업 / 스케줄 작업
+Command        명령 처리
+State / DTO    상태 및 데이터 전달
+Registry       정의 등록 / 조회
+```
 
 ---
 
-## 6. 데이터베이스
+## 6. 메인 플러그인 초기화 구조
 
-RPGCore의 핵심 데이터는 MariaDB에 저장한다.
-
-### 6.1 플레이어 기본 데이터
-
-대표 테이블:
+진입점:
 
 ```text
-rpg_players
+RPGCorePlugin
 ```
 
-주요 필드:
+주요 책임:
+
+1. 설정 로드
+2. DB 연결 초기화
+3. Repository 생성
+4. Service 생성
+5. Listener 생성 및 등록
+6. Command 등록
+7. Placeholder / 외부 플러그인 hook
+8. 반복 Task 시작
+9. 종료 시 리소스 정리
+
+권장 의존성 방향:
 
 ```text
-player_uuid
-player_name
-display_name
-level
-experience
-player_class
-created_at
-last_login_at
-updated_at
-```
-
-원칙:
-
-- 실제 계정 식별은 UUID와 원래 계정명으로 유지한다.
-- 서버 표시 이름은 `display_name`을 별도로 사용할 수 있다.
-- DB 내부 식별자를 한글 표시명으로 대체하지 않는다.
-
----
-
-## 7. 레벨 / 경험치 시스템
-
-최대 레벨:
-
-```text
-99
-```
-
-기본 구조:
-
-```text
-플레이어 행동
+RPGCorePlugin
     ↓
-경험치 획득
+Repository 생성
     ↓
-LevelService
+Service 생성
     ↓
-현재 레벨 / EXP 계산
-    ↓
-DB 저장
-    ↓
-레벨업 후속 처리
+Listener / Command 생성
 ```
 
-특징:
-
-- 몬스터 처치 EXP
-- 던전 클리어 EXP
-- 관리자 EXP / 레벨 조정
-- 재접속 후 DB 복원
-- 고레벨 칭호 자동 검사와 연계
-
-전직 전 성장 제한 정책을 적용할 수 있으며, 초기 설계상 Lv.5 전직 구간이 핵심 분기점이다.
+하위 Service가 `RPGCorePlugin` 전체를 직접 참조하는 방식은 가능한 한 피하고, 필요한 의존성만 생성자 주입한다.
 
 ---
 
-## 8. 직업 시스템
+## 7. 계층 구조
 
-현재 핵심 직업:
+RPGCore의 일반적인 기능 흐름:
 
 ```text
-Warrior
-Mage
+Paper Event / Command
+        ↓
+Listener / Command
+        ↓
+Service
+        ↓
+Repository
+        ↓
+MariaDB
 ```
 
-직업 데이터는 플레이어 DB와 연계한다.
-
-### 전사
-
-주요 구현 스킬 예:
-
-- Bash
-- Dash
-- Execution Slash
-- Berserker Rage
-- 기타 전사 공격 / 버프 스킬
-
-### 마법사
-
-주요 구현 스킬 예:
-
-- Fire Bolt
-- Teleport
-- Gate of Babylon
-- Meteor Strike
-- Black Hole
-- Mana Overload
-- 기타 마법 공격 / 버프 스킬
-
-### 스킬 공통 원칙
-
-- 스킬 사용 조건 확인
-- 재사용 대기시간
-- 마나 / 자원 소모
-- 대상 판정
-- 데미지 처리
-- 이펙트 / 사운드
-- 공격 / 방어 버프 서비스와 연동
-
----
-
-## 9. 전투 / 스탯 시스템
-
-RPGCore는 바닐라 수치만 사용하는 것이 아니라 자체 RPG 스탯을 관리한다.
-
-대표 스탯:
+표시가 필요한 경우:
 
 ```text
-공격력
-방어력
-표시 방어력
-강인함
-고정 피해 감소
-HP
-MP
-EXP
-직업
-레벨
+Repository / Service
+        ↓
+Main Thread
+        ↓
+Player / Inventory / BossBar / HUD / Message
 ```
 
-아이템 옵션 중 최대 HP / 최대 MP 증가 옵션은 사용하지 않는다.
-
-최대 HP / MP는 레벨 및 직업 성장에 의해 결정되며 장비로 직접 증가시키지 않는다.
-
----
-
-## 10. 아이템 등급
-
-RPGCore의 아이템 등급은 다음 5단계로 고정한다.
+외부 플러그인 사용 시:
 
 ```text
-고급
-희귀
-영웅
-전설
-신화
-```
-
-칭호 등급도 같은 체계를 기준으로 사용할 수 있다.
-
----
-
-## 11. 장비 / 커스텀 아이템
-
-커스텀 장비는 RPGCore의 자체 아이템 정의와 외형 시스템을 결합한다.
-
-주요 기능:
-
-- 커스텀 무기
-- 커스텀 방어구
-- 공격력
-- 방어력
-- 강인함
-- 고정 피해 감소
-- 장비 슬롯
-- 세트 외형
-- 강화 / 제작 / 분해 연계
-
-외형 제공 기술:
-
-- BetterModel
-- MythicArmors
-- ModelEngine
-- ItemsAdder
-- CraftEngine 계열
-
-핵심 게임 수치는 가능한 한 RPGCore가 소유한다.
-
----
-
-## 12. 장비 제작 / 분해 / 강화
-
-### 제작
-
-- 제작 NPC / GUI
-- 장비 분류
-- 제작 재료 검사
-- 제작 실행
-- 미리보기
-- 세트 미리보기
-
-### 분해
-
-- 장비 분해
-- 분해 보상
-- 반환 데이터 관리
-
-### 강화
-
-- 강화 시도
-- 성공 / 실패
-- 강화 수치 반영
-- 향후 업적과 연결 가능
-
----
-
-## 13. HUD / 표시 시스템
-
-BetterHud와 RPGCore를 연계해 RPG UI를 제공한다.
-
-표시 대상:
-
-- HP
-- MP
-- 배고픔 / 상태
-- 레벨
-- 경험치
-- 직업
-- 공격력
-- 방어력
-
-플레이어는 별도 클라이언트 모드를 필수로 설치하지 않고 서버 리소스팩을 통해 UI를 제공받는 구조를 지향한다.
-
----
-
-## 14. 플레이어 이름표 / 표시 이름
-
-RPGCore에는 `PlayerNameTagService`가 존재한다.
-
-DB의 `display_name`을 이용해 서버 내 표시 이름을 별도로 관리할 수 있다.
-
-예:
-
-```text
-player_name  = ShinHongRyeon
-display_name = 신홍련
-```
-
-원칙:
-
-- UUID / 계정명은 내부 식별용
-- display_name은 플레이어에게 보여주는 이름
-- 명령어 대상 검색은 계정명 / 표시명 정책을 명확히 구분해야 한다.
-
----
-
-## 15. 던전 시스템
-
-RPGCore는 고정형 던전 중심으로 설계되어 있다.
-
-공통 규칙:
-
-- 플레이어가 지정 범위에 진입하면 던전 시작
-- 웨이브 기반 진행
-- 던전 소환 몹은 지정 범위를 이탈하지 못하도록 제어
-- 클리어 시 EXP / 아이템 보상
-- 보스 / 특수 던전은 개별 서비스로 관리
-
-확인된 주요 던전 계열:
-
-- Zombie Dungeon
-- Ancient Depths
-- Nether Fortress
-- Enderman Dungeon
-- Minotaur Dungeon
-- Void Sanctum
-- Shulker Dungeon
-- Fallen Angel Boss Dungeon
-- Red Dragon Dungeon
-
-### 던전 UI 원칙
-
-채팅 / Subtitle / BossBar 중심으로 진행 정보를 제공한다.
-
-예:
-
-- 입장 카운트다운
-- Wave 시작
-- Wave Clear
-- 다음 Wave 안내
-- 보스 상태
-- 클리어 안내
-
----
-
-## 16. 던전 보상
-
-`DungeonRewardService`가 던전 보상 로직을 담당한다.
-
-보상 예:
-
-- 경험치
-- 커스텀 아이템
-- 재료
-- 골드
-- 던전별 보상
-
-던전 고유 업적이 필요한 경우 공통 보상 메서드에 억지로 합치지 않고, 실제 해당 던전의 확정 클리어 지점에서 업적 서비스를 호출하는 구조를 권장한다.
-
----
-
-## 17. 몬스터 처치 / EXP
-
-`MobKillListener`가 플레이어의 몬스터 처치 이벤트를 처리한다.
-
-처리 흐름:
-
-```text
-EntityDeathEvent
-    ↓
-killer 확인
-    ↓
-던전 / 몬스터 유형 판정
-    ↓
-획득 EXP 계산
-    ↓
-비동기 DB 저장
-    ↓
-레벨업 후속 처리
-```
-
-업적 처치 카운트는 EXP 지급 여부와 독립적으로 설계하는 것이 안전하다.
-
----
-
-## 18. NPC 시스템
-
-Citizens NPC를 RPG 콘텐츠 진입점으로 적극 활용한다.
-
-NPC 역할 예:
-
-- 직업 관련
-- 장비 제작
-- 장비 분해
-- 상점
-- 가구 상점
-- 경마
-- 슬롯머신
-- 칭호 관리
-
-NPC 기반 GUI를 통해 복잡한 명령어 사용을 최소화한다.
-
----
-
-## 19. 가구 상점 - NPC 25
-
-NPC 25는 가구 구매 UI를 담당한다.
-
-DB:
-
-```text
-rpg_furniture_shop_items
-```
-
-주요 필드:
-
-```text
-id
-shop_item_id
-provider
-provider_item_id
-display_name
-price_gold
-display_order
-enabled
-```
-
-지원 Provider:
-
-```text
-VANILLA
-CRAFTENGINE
-ITEMSADDER
-RPGCORE
-MYTHICMOBS
-ENCHANT_BOOK
-```
-
-가구 상점 UI:
-
-```text
-Inventory Size = 45
-Page Size      = 36
-Previous       = 36
-Buy            = 40
-Next           = 44
-```
-
-기능:
-
-- 아이템 미리보기
-- 페이지 이동
-- 구매
-- 골드 차감
-- 설치
-- 착석
-- 조명 기능
-- Provider별 아이템 생성
-
----
-
-## 20. ItemsAdder 연동
-
-ItemsAdder는 핵심 시스템 소유자가 아니라 **외형 / 리소스 생성 보조 도구**로 사용한다.
-
-원칙:
-
-```text
-ItemsAdder
-    ↓
-외부 리소스 로드
-    ↓
-IA behavior 등록
-    ↓
-uncompressed output 생성
-    ↓
-검증
-    ↓
-RPGCore source pack으로 명시적 병합
-```
-
-사용 명령:
-
-```text
-/iazip --uncompressed --apply-to none
-```
-
-금지:
-
-- 일반 `/iazip`으로 운영 팩 자동 적용
-- ItemsAdder가 최종 RPGCore 리소스팩을 직접 소유
-- 자동 호스팅
-- 자동 적용
-
-ItemsAdder 설정은 최종 리소스팩을 덮어쓰지 않도록 유지한다.
-
----
-
-## 21. Nieyels 가구
-
-namespace:
-
-```text
-nieyels
-```
-
-구성:
-
-```text
-/srv/minecraft/server/plugins/ItemsAdder/contents/nieyels
-```
-
-기능:
-
-- 가구 외형
-- 설치
-- 착석
-- NPC 상점 연동
-- Paper 26.2 resource item carrier 대응
-
----
-
-## 22. FurniturePlus
-
-namespace:
-
-```text
-furnituresplus
-```
-
-총 등록 가구:
-
-```text
-139
-```
-
-DB상 NPC 25 가구 상점에 ItemsAdder provider로 등록되었다.
-
-특징:
-
-- 9개 색상 계열 × 15종
-- 추가 paint / radio 계열
-- 설치
-- 착석
-- 조명
-- NPC 판매
-
-FurniturePlus 리소스는 ItemsAdder에서 생성한 뒤 RPGCore 최종 팩으로 병합한다.
-
----
-
-## 23. 칭호 시스템 - NPC 26
-
-NPC 26은 플레이어 칭호 관리 UI를 담당한다.
-
-핵심 테이블:
-
-```text
-rpg_title_definitions
-rpg_player_title_unlocks
-rpg_player_title_equipped
-```
-
-### 칭호 정의
-
-대표 필드:
-
-```text
-title_id
-title_text
-rarity
-title_color
-unlock_type
-unlock_target
-unlock_value
-created_at
-```
-
-### 획득
-
-`rpg_player_title_unlocks`에 획득 기록을 저장한다.
-
-중복 획득은:
-
-```text
-PRIMARY KEY(player_uuid, title_id)
-```
-
-형태로 방지한다.
-
-### 장착
-
-플레이어는 획득한 칭호만 장착 가능하다.
-
-자동 장착은 하지 않는다.
-
----
-
-## 24. 기존 칭호
-
-칭호 예시:
-
-### 재벌
-
-```text
-title_id      wealthy_10m
-조건          10,000,000 골드 이상 보유
-등급          전설
-unlock_type   balance_at_least
-
----
-
-## 25. 업적 기반 칭호 시스템
-
-0.4.9에서 업적 기반 칭호 진행도 시스템이 추가되었다.
-
-신규 테이블:
-
-```text
-rpg_player_achievement_progress
-```
-
-구조:
-
-```text
-player_uuid
-progress_type
-progress_target
-progress_value
-updated_at
-```
-
-기본 키:
-
-```text
-(player_uuid, progress_type, progress_target)
-```
-
-Repository:
-
-```text
-AchievementProgressRepository
-```
-
-Service:
-
-```text
-AchievementTitleUnlockService
-```
-
-구조:
-
-```text
-콘텐츠에서 조건 충족
-    ↓
-AchievementTitleUnlockService
-    ↓
-AchievementProgressRepository
-    ↓
-진행도 증가
-    ↓
-목표값 도달
-    ↓
-PlayerTitleCollectionRepository.unlockTitle()
-    ↓
-rpg_player_title_unlocks
-    ↓
-NPC 26에서 장착 가능
+Service
+   ├── Vault
+   ├── Citizens
+   ├── PlaceholderAPI
+   ├── BetterHud
+   ├── BetterModel
+   ├── ItemsAdder
+   └── Mythic / ModelEngine 계열
 ```
 
 ---
 
-## 26. 도박중독 업적 칭호
+## 8. 데이터베이스 계층
 
-0.4.9에서 실제 구현 및 테스트 완료된 업적 칭호.
+RPGCore의 영구 데이터는 MariaDB에 저장한다.
 
-```text
-title_id        gambling_addiction
-title_text      도박중독
-rarity          희귀
-unlock_type     paid_gambling_count
-unlock_target   total
-unlock_value    100
-```
-
-조건:
-
-```text
-경마장 또는 슬롯머신 실제 유료 이용 합계 100회
-```
-
-카운트 인정:
-
-- 실제 골드 차감 성공
-- DB 상태가 `DEBIT_CONFIRMED`까지 정상 전환
-- 정상 유료 이용으로 확정
-
-제외:
-
-- 골드 부족
-- 차감 실패
-- 취소
-- 무료 이용
-- 환불 / 실패 처리
-
-검증 완료:
-
-```text
-progress_value = 100
-```
-
-도달 즉시 `도박중독` 칭호가 획득되는 것을 실제 테스트 완료했다.
-
----
-
-## 27. 경마 시스템 - NPC 22
-
-경마 NPC:
-
-```text
-NPC 22
-```
-
-주요 클래스:
-
-```text
-HorseRaceNpcListener
-HorseRaceBetService
-HorseRaceRepository
-```
-
-베팅 흐름:
-
-```text
-PREPARED
-    ↓
-DEBIT_IN_FLIGHT
-    ↓
-Vault 골드 차감
-    ↓
-DEBIT_CONFIRMED
-```
-
-골드 차감 실패 시:
-
-```text
-CANCELLED
-```
-
-서버 종료 / 불명확 거래는 안전한 상태 전이 및 환불 검토 경로를 사용한다.
-
-업적 카운트는 `DEBIT_CONFIRMED` 성공 직후 호출한다.
-
----
-
-## 28. 슬롯머신 시스템 - NPC 23
-
-슬롯머신 NPC:
-
-```text
-NPC 23
-```
-
-주요 클래스:
-
-```text
-SlotMachineNpcListener
-SlotMachineBetService
-SlotMachineRepository
-```
-
-기본 베팅:
-
-```text
-MIN_BET  = 100
-MAX_BET  = 100,000,000
-BET_STEP = 100
-```
-
-릴 심볼 예:
-
-```text
-BAKED_POTATO
-APPLE
-GOLDEN_APPLE
-```
-
-결과는 골드 차감 전에 DB에 준비한 후 안전하게 차감 상태를 전환한다.
-
-흐름:
-
-```text
-PREPARED
-    ↓
-DEBIT_IN_FLIGHT
-    ↓
-Vault withdraw
-    ↓
-DEBIT_CONFIRMED
-    ↓
-릴 애니메이션
-    ↓
-정산
-```
-
-업적 카운트는 `DEBIT_CONFIRMED` 성공 직후 호출한다.
-
----
-
-## 29. 경제 시스템
-
-Vault 기반 경제 서비스를 사용한다.
-
-대표 서비스:
-
-```text
-ShopEconomyService
-```
-
-사용처:
-
-- NPC 상점
-- 가구 구매
-- 경마
-- 슬롯머신
-- 보유 골드 칭호
-- 기타 결제형 콘텐츠
-
-Vault 접근은 메인 스레드 제약을 고려하고, DB 기록은 비동기 처리하는 패턴을 사용한다.
-
----
-
-## 30. 리소스팩 전체 구조
-
-RPGCore는 최종 리소스팩의 소유자다.
-
-소스:
-
-```text
-/srv/minecraft/resourcepacks/rpgcore
-```
-
-최종 ZIP:
-
-```text
-/srv/minecraft/resourcepacks/rpgcore-0.4.9.zip
-```
-
-현재 정상 운영 SHA1 기준:
-
-```text
-e5ed0ba1d9b8f2fc4233ce7956908fe9996b313a
-```
-
-배포 URL:
-
-```text
-http://46.250.248.12:8080/rpgcore-0.4.9.zip
-```
-
-Paper 26.2 resource pack format:
-
-```text
-88
-```
-
----
-
-## 31. 리소스팩 Overlay
-
-Paper 26.2 대응 overlay:
-
-```text
-ia_overlay_26_2_plus
-```
-
-기준:
-
-```json
-{
-  "min_format": 88,
-  "max_format": 9999,
-  "formats": {
-    "min_inclusive": 88,
-    "max_inclusive": 9999
-  },
-  "directory": "ia_overlay_26_2_plus"
-}
-```
-
----
-
-## 32. 리소스팩 재배포 파이프라인
-
-관리 스크립트:
-
-```text
-/srv/minecraft/redeploy-resourcepack.py
-```
-
-역할:
-
-1. RPGCore source pack 확인
-2. 기존 배포 ZIP 백업
-3. BetterHud 리소스 병합
-4. BetterModel / ModelEngine 리소스 병합
-5. MythicArmors / 외부 생성 리소스 병합
-6. ItemsAdder에서 명시적으로 가져온 리소스 병합
-7. atlas collision 검사
-8. 최종 ZIP 생성
-9. SHA1 계산
-10. `server.properties`의 resource-pack / SHA1 갱신
-
-백업 위치:
-
-```text
-/srv/minecraft/backups/resourcepack-redeploy/<timestamp>
-```
-
----
-
-## 33. Atlas 관리
-
-Paper 26.2 / ItemsAdder 병합 시 atlas가 중요하다.
-
-FurniturePlus 적용 시 `assets/minecraft/atlases/items.json`에 IA sprite source를 추가하여 문제를 해결했다.
-
-원칙:
-
-- 기존 atlas source 보존
-- 신규 sprite ID 충돌 방지
-- ModelEngine merge 전후 atlas 보존 확인
-- 대규모 JSON 삭제 금지
-- 생성된 IA atlas를 무조건 최종 팩으로 덮어쓰지 않음
-
----
-
-## 34. BetterHud
-
-BetterHud는 HUD 표시와 리소스 출력에 사용한다.
-
-주의:
-
-- BetterHud font JSON을 임의로 대량 삭제하지 않는다.
-- 기존 HUD asset 구조 유지
-- RPGCore resource pack composer가 필요한 리소스를 최종 팩에 병합한다.
-
----
-
-## 35. BetterModel / ModelEngine
-
-커스텀 모델은 BetterModel / ModelEngine을 활용한다.
-
-용도:
-
-- 몬스터 모델
-- 플레이어 장비 미리보기
-- 일부 커스텀 엔티티
-- 외형 표현
-
-BBModel 파일은 직접 생성 / 외부 구입 자산이 혼재할 수 있으므로 GitHub 공개 시 라이선스 확인이 필요하다.
-
----
-
-## 36. MythicMobs / MythicArmors
-
-### MythicMobs
-
-- 일부 커스텀 몬스터
-- 보스
-- 던전 몹
-- 외형 / 스킬 연계
-
-### MythicArmors
-
-- 커스텀 방어구 외형
-- 세트 장비 표현
-
-RPGCore는 실제 RPG 능력치와 획득 / 구매 / 제작 규칙을 소유하고 외부 플러그인은 외형 및 몹 동작을 보조한다.
-
----
-
-## 37. 주요 명령어
-
-기본 명령:
-
-```text
-/rpgcore
-/rpg
-/stats
-/class <warrior|mage>
-/rpgclaim
-```
-
-관리자:
-
-```text
-/rpgadmin
-```
-
-기존 테스트 예:
-
-```text
-/rpgadmin level set <player> <level>
-/rpgadmin exp set <player> <exp>
-/rpgadmin exp add <player> <exp>
-```
-
-칭호 명령도 별도 제공된다.
-
----
-
-## 38. 비동기 처리 원칙
-
-DB 작업은 메인 서버 틱을 막지 않도록 비동기 처리한다.
+DatabaseManager는 공통 DB 연결 계층을 담당하고, 기능별 Repository가 SQL을 소유한다.
 
 대표 패턴:
 
 ```text
-Main Thread
+Service
     ↓
-게임 상태 / Bukkit API 확인
+SomeRepository
     ↓
-runTaskAsynchronously
+PreparedStatement
     ↓
-MariaDB 작업
-    ↓
-runTask
-    ↓
-플레이어 메시지 / Bukkit 상태 반영
+MariaDB
 ```
 
-Vault 등 메인 스레드 접근이 필요한 API는 메인 스레드에서 호출한다.
+Repository 설계 원칙:
+
+- SQL은 Listener에 직접 작성하지 않는다.
+- 플레이어 식별은 UUID를 기본으로 한다.
+- INSERT / UPDATE는 중복 실행에 안전하도록 설계한다.
+- 필요한 경우 DB unique key 또는 primary key로 중복을 방지한다.
+- 운영 데이터 변경은 명시적인 트랜잭션 상태를 남긴다.
+- Bukkit API 객체를 DB 스레드에서 직접 조작하지 않는다.
 
 ---
 
-## 39. 안전한 상태 전이 원칙
+## 9. 플레이어 식별 구조
 
-경마 / 슬롯과 같이 실제 골드가 움직이는 기능은 단순 `withdraw()` 후 처리하지 않고 DB 상태를 먼저 기록한다.
+내부 식별:
 
-예:
+```text
+player_uuid
+```
+
+계정 이름:
+
+```text
+player_name
+```
+
+표시용 이름:
+
+```text
+display_name
+```
+
+원칙:
+
+```text
+UUID          내부 영구 식별
+player_name   Mojang 계정명 기록
+display_name  UI / 이름표 / 표시 목적
+```
+
+DB 키와 운영 로직을 `display_name`에 의존시키지 않는다.
+
+---
+
+## 10. 비동기 처리 구조
+
+DB 작업은 서버 메인 틱을 막지 않도록 비동기 실행을 기본으로 한다.
+
+대표 흐름:
+
+```text
+Main Thread
+    ↓
+Bukkit 상태 확인
+    ↓
+runTaskAsynchronously
+    ↓
+Repository / MariaDB
+    ↓
+runTask
+    ↓
+Bukkit 객체 변경 / 메시지 출력
+```
+
+### 메인 스레드에서 처리할 것
+
+- Bukkit Entity 접근
+- Inventory 변경
+- Player 메시지
+- World 변경
+- 대부분의 Vault 호출
+- NPC / GUI 조작
+
+### 비동기 처리할 것
+
+- SELECT
+- INSERT
+- UPDATE
+- DELETE
+- 단순 DB 계산
+
+비동기 스레드에서 Bukkit 객체를 직접 변경하지 않는다.
+
+---
+
+## 11. Repository / Service 분리 원칙
+
+### Repository
+
+담당:
+
+```text
+SQL
+DB row 읽기
+DB row 삽입
+DB row 갱신
+DB 상태 전이
+```
+
+담당하지 않음:
+
+```text
+플레이어 메시지
+GUI
+월드 조작
+이펙트
+게임 진행
+```
+
+### Service
+
+담당:
+
+```text
+조건 판단
+게임 규칙
+여러 Repository 조합
+외부 API 호출 조정
+결과 처리
+```
+
+### Listener
+
+담당:
+
+```text
+Paper 이벤트를 Service 호출로 변환
+```
+
+Listener가 복잡한 비즈니스 로직을 직접 소유하지 않도록 유지한다.
+
+---
+
+## 12. 안전한 거래 상태 전이
+
+경제성 기능은 단순히 골드 차감 후 결과를 저장하지 않는다.
+
+대표 상태:
 
 ```text
 PREPARED
@@ -1192,183 +428,951 @@ CANCELLED
 REFUND_PENDING
 ```
 
+기본 흐름:
+
+```text
+DB 거래 생성
+    ↓
+PREPARED
+    ↓
+DEBIT_IN_FLIGHT
+    ↓
+Vault withdraw
+    ↓
+성공 → DEBIT_CONFIRMED
+실패 → CANCELLED
+```
+
 목적:
 
-- 서버 강제 종료 대응
+- 서버 비정상 종료 대응
 - 중복 차감 방지
-- 불명확 거래 추적
-- 수동 검토 가능
-- 보상 / 환불 신뢰성 향상
+- 차감 성공 여부 추적
+- 환불 판단 가능
+- 운영자가 DB에서 거래 상태를 확인 가능
 
 ---
 
-## 40. 운영 백업 정책
+## 13. 데이터 진행도 공통 구조
 
-모든 백업:
+누적 조건이 필요한 기능은 공용 진행도 테이블 구조를 사용할 수 있다.
+
+현재 구현 예:
+
+```text
+rpg_player_achievement_progress
+```
+
+기본 구조:
+
+```text
+player_uuid
+progress_type
+progress_target
+progress_value
+updated_at
+```
+
+키:
+
+```text
+(player_uuid, progress_type, progress_target)
+```
+
+이 구조는 특정 콘텐츠에 종속시키지 않고 다음과 같이 일반화할 수 있다.
+
+```text
+이벤트 발생
+    ↓
+Progress Service
+    ↓
+Progress Repository
+    ↓
+progress_value 증가
+    ↓
+조건 충족 여부 확인
+    ↓
+후속 기능 호출
+```
+
+---
+
+## 14. 명령 처리 구조
+
+명령은 `command/` 패키지에 분리한다.
+
+기본 패턴:
+
+```text
+Command
+    ↓
+권한 확인
+    ↓
+인자 검증
+    ↓
+Service 호출
+    ↓
+결과 메시지
+```
+
+관리자 명령과 플레이어 명령은 역할을 분리한다.
+
+운영 데이터를 직접 변경하는 관리자 명령은 입력값 검증과 대상 검증을 반드시 수행한다.
+
+---
+
+## 15. 이벤트 처리 구조
+
+Paper 이벤트 Listener는 가능한 한 얇게 유지한다.
+
+예:
+
+```text
+Event
+  ↓
+대상 / 조건 최소 확인
+  ↓
+Service 호출
+```
+
+금지에 가까운 구조:
+
+```text
+Listener
+  ├── 긴 SQL
+  ├── 대규모 계산
+  ├── 여러 외부 API 직접 호출
+  └── 수백 줄 비즈니스 로직
+```
+
+---
+
+## 16. GUI 구조
+
+인벤토리 GUI는 다음 구조를 권장한다.
+
+```text
+Gui / Menu
+    ↓
+InventoryHolder
+    ↓
+Listener
+    ↓
+Service
+```
+
+GUI에 DB 쿼리나 경제 처리 로직을 직접 넣지 않는다.
+
+필요 시 Repository에서 데이터를 가져온 뒤 UI 모델로 변환한다.
+
+---
+
+## 17. 외부 플러그인 의존성
+
+현재 주요 외부 의존성:
+
+```text
+BetterHud
+BetterModel
+Citizens
+ItemsAdder
+ModelEngine
+MythicArmors
+MythicMobs
+PlaceholderAPI
+ProtocolLib
+Vault
+WorldEdit
+WorldGuard
+CraftEngine 계열
+```
+
+설계 원칙:
+
+```text
+RPGCore         게임 규칙 / 영구 데이터
+Citizens        NPC 표현
+Vault           경제 API
+BetterHud       HUD 표현
+PlaceholderAPI  값 노출
+BetterModel     모델 표현
+ItemsAdder      외부 리소스 생성 보조
+Mythic*         몹 / 방어구 외형 및 동작 보조
+```
+
+외부 플러그인이 RPGCore의 DB나 핵심 게임 규칙의 원본이 되지 않도록 한다.
+
+---
+
+## 18. Placeholder 구조
+
+RPGCore는 PlaceholderAPI를 통해 외부 HUD / UI가 사용할 값을 제공한다.
+
+권장 구조:
+
+```text
+RPGCore internal data
+        ↓
+Placeholder Expansion
+        ↓
+PlaceholderAPI
+        ↓
+BetterHud / 기타 표시 플러그인
+```
+
+Placeholder 클래스에 새로운 게임 규칙을 구현하지 않는다.
+
+---
+
+## 19. HUD 구조
+
+BetterHud는 표현 계층이다.
+
+RPGCore:
+
+```text
+상태 계산
+    ↓
+Placeholder / HUD Service
+    ↓
+BetterHud
+```
+
+BetterHud 설정과 RPGCore 비즈니스 로직을 강하게 결합하지 않는다.
+
+HUD asset 구조는 이미 정상 운영 중인 리소스 구조를 유지한다.
+
+---
+
+## 20. 리소스팩 소유 구조
+
+최종 리소스팩의 소유자는 RPGCore 프로젝트이다.
+
+소스:
+
+```text
+/srv/minecraft/resourcepacks/rpgcore
+```
+
+최종 배포 파일:
+
+```text
+/srv/minecraft/resourcepacks/rpgcore-0.4.9.zip
+```
+
+접속 클라이언트는 이 최종 ZIP을 다운로드한다.
+
+외부 플러그인이 생성한 팩을 그대로 사용자에게 배포하는 구조가 아니다.
+
+---
+
+## 21. 리소스팩 빌드 파이프라인
+
+관리 스크립트:
+
+```text
+/srv/minecraft/redeploy-resourcepack.py
+```
+
+개념 구조:
+
+```text
+RPGCore Source Pack
+        +
+BetterHud Resources
+        +
+BetterModel / ModelEngine Resources
+        +
+Mythic / Armor Resources
+        +
+검증된 ItemsAdder Output
+        ↓
+Merge
+        ↓
+Atlas 검증
+        ↓
+ZIP 생성
+        ↓
+SHA1 계산
+        ↓
+server.properties 갱신
+```
+
+배포 파일:
+
+```text
+/srv/minecraft/resourcepacks/rpgcore-0.4.9.zip
+```
+
+---
+
+## 22. ItemsAdder의 역할
+
+ItemsAdder는 최종 팩 소유자가 아니다.
+
+사용 흐름:
+
+```text
+ItemsAdder source
+    ↓
+/iazip --uncompressed --apply-to none
+    ↓
+output_uncompressed
+    ↓
+필요 파일 검증
+    ↓
+RPGCore source pack으로 병합
+```
+
+금지:
+
+```text
+일반 /iazip 자동 배포
+ItemsAdder auto apply
+ItemsAdder auto hosting
+최종 팩 자동 덮어쓰기
+```
+
+---
+
+## 23. Atlas / Overlay 관리
+
+Paper 26.2 resource pack format:
+
+```text
+88
+```
+
+Paper 26.2용 overlay 예:
+
+```text
+ia_overlay_26_2_plus
+```
+
+Atlas 관리 원칙:
+
+- 기존 source 보존
+- sprite ID 충돌 확인
+- merge 전후 JSON 비교
+- 외부 생성 atlas 전체 덮어쓰기 금지
+- 대량 JSON 삭제 금지
+- 리소스팩 변경 후 최종 ZIP에서 재검증
+
+---
+
+## 24. 빌드 구조
+
+빌드:
+
+```bash
+cd /srv/minecraft/plugins-source/RPGCore
+./gradlew clean build
+```
+
+결과:
+
+```text
+build/libs/RPGCore-0.4.9.jar
+```
+
+운영 배포:
+
+```text
+/srv/minecraft/server/plugins/RPGCore-0.4.9.jar
+```
+
+빌드 결과물은 Git에 포함하지 않는다.
+
+---
+
+## 25. 배포 절차
+
+운영 플러그인 변경 시:
+
+```text
+1. 소스 상태 확인
+2. /srv/minecraft/backups 에 백업
+3. 소스 수정
+4. ./gradlew clean build
+5. build success 확인
+6. 서버 중지
+7. 운영 JAR 교체
+8. 필요 시 SHA256 비교
+9. 서버 시작
+10. journal 로그 확인
+11. 인게임 최소 기능 테스트
+```
+
+운영 중 JAR을 직접 덮어쓴 뒤 reload 하는 방식은 기본 배포 절차로 사용하지 않는다.
+
+---
+
+## 26. 로그 검증
+
+배포 후 최소 확인 대상:
+
+```text
+RPGCore enable 성공
+DB 연결 성공
+Listener 등록 오류 없음
+Command 등록 오류 없음
+Placeholder hook 성공
+외부 plugin hook 실패 여부
+SQLException 없음
+ClassNotFoundException 없음
+NoSuchMethodError 없음
+```
+
+예:
+
+```bash
+sudo journalctl -u minecraft --no-pager | tail -200
+```
+
+필요한 모듈만 필터링:
+
+```bash
+sudo journalctl -u minecraft --no-pager \
+| grep -Ei 'RPGCore|ERROR|WARN|Exception'
+```
+
+---
+
+## 27. 백업 정책
+
+모든 백업은 다음 위치만 사용한다.
 
 ```text
 /srv/minecraft/backups
 ```
 
-원칙:
-
-- 소스 변경 전 백업
-- 운영 JAR 교체 전 백업
-- resource pack 배포 전 백업
-- DB 구조 변경 전 SQL 확인
-- `.bak` 파일을 소스 디렉토리에 만들지 않음
-
-전체 `/srv/minecraft` 백업 시 제외 가능:
+금지:
 
 ```text
-/srv/minecraft/server/world
-/srv/minecraft/backups
+소스 옆 *.bak
+*.java.bak
+임시 수정본을 src/main/java 안에 장기 보관
+```
+
+백업 디렉토리 예:
+
+```text
+/srv/minecraft/backups/<작업명>-YYYYMMDD-HHMMSS/
+```
+
+백업 대상 예:
+
+```text
+운영 JAR
+수정 대상 Java
+resource pack ZIP
+resource pack source 일부
+설정 파일
 ```
 
 ---
 
-## 41. GitHub 관리 원칙
+## 28. 소스 수정 원칙
 
-GitHub에는 개발 소스와 직접 작성한 문서 / 스크립트만 올린다.
+운영 중인 0.4.9 기준에서는 구조 전체를 불필요하게 정리하지 않는다.
 
-포함 권장:
+수정 순서:
 
 ```text
-plugins-source/RPGCore/src/
-build.gradle.kts
-settings.gradle.kts
-gradle/
-gradlew
-gradlew.bat
-README.md
-docs/
-직접 작성한 scripts
+현재 코드 확인
+    ↓
+실제 호출 구조 확인
+    ↓
+최소 변경 범위 결정
+    ↓
+백업
+    ↓
+수정
+    ↓
+컴파일
+    ↓
+테스트
 ```
 
-제외:
+금지:
+
+- 근거 없는 클래스 이동
+- 대규모 package rename
+- 사용 여부 확인 없이 파일 삭제
+- 정상 리소스팩 JSON 일괄 삭제
+- 기존 서비스 인터페이스 임의 변경
+- 외부 플러그인 구조 추측 후 수정
+
+---
+
+## 29. 파일 정리 기준
+
+Git 저장소에는 실제 개발 파일만 유지한다.
+
+제외 대상 예:
+
+```text
+*.before-*
+*.bak
+*.old
+Compilation
+Task
+build.gradle.kts.pre-*
+build/
+.gradle/
+```
+
+이전 수정본은 Git history 또는 `/srv/minecraft/backups`에서 관리한다.
+
+---
+
+## 30. GitHub 저장소 구조
+
+권장 구조:
+
+```text
+mcadmin/
+├── RPGCore/
+│   ├── src/
+│   ├── gradle/
+│   ├── build.gradle.kts
+│   ├── settings.gradle.kts
+│   ├── gradle.properties
+│   ├── gradlew
+│   └── gradlew.bat
+├── scripts/
+├── docs/
+├── .gitignore
+└── README.md
+```
+
+운영 서버 전체를 Git 저장소에 넣지 않는다.
+
+---
+
+## 31. Git 제외 대상
+
+반드시 제외:
 
 ```text
 server/
 backups/
-world/
 logs/
 crash-reports/
+
+.gradle/
+build/
+
 database.yml
 secret.yml
 .env
+
+*.class
+*.log
+
 resourcepacks/source-models/
-구매한 BBModel / Texture / Armor / Furniture 자산
-생성된 JAR
-생성된 ZIP
+resourcepacks/*.zip
+
+구매 자산
+외부 배포 제한 자산
+운영 DB dump
 ```
 
----
-
-## 42. 0.4.9 완료 상태 요약
-
-RPGCore 0.4.9에서 현재 완료 및 실제 동작 검증된 주요 영역:
-
-- Paper 26.2 / Java 25 대응
-- MariaDB 연결
-- 플레이어 데이터 저장
-- 레벨 / EXP
-- 직업
-- 전사 / 마법사 스킬
-- 전투 / 스탯
-- 장비 / 제작 / 분해
-- 커스텀 아이템
-- HUD
-- 플레이어 이름표
-- 다수 던전
-- 던전 보상
-- NPC 상점
-- 가구 상점 NPC 25
-- ItemsAdder provider
-- Nieyels 가구
-- FurniturePlus 139개
-- 설치 / 착석 / 조명
-- 칭호 관리 NPC 26
-- 레벨 칭호
-- 재벌 칭호
-- 용살자 칭호
-- 경마 NPC 22
-- 슬롯머신 NPC 23
-- 업적 진행도 시스템
-- `도박중독` 업적 칭호
-- resource pack composer
-- Paper 26.2 atlas / overlay 대응
-- 운영 백업 / 배포 절차
-
----
-
-## 43. 향후 확장 방향
-
-0.4.9 구조를 그대로 활용해 다음 기능을 확장할 수 있다.
-
-### 업적
-
-- 몬스터 누적 처치
-- 던전 누적 클리어
-- 보스 처치
-- 장비 제작
-- 장비 분해
-- 강화 성공 / 실패
-- 상점 구매
-- 가구 구매
-- 누적 골드 소비
-- 플레이타임
-- 고난도 조건부 보스 클리어
-
-### 칭호
-
-업적 진행도와 `rpg_title_definitions`의 다음 필드를 연결한다.
+Gradle wrapper JAR은 예외적으로 포함 가능하다.
 
 ```text
-unlock_type
-unlock_target
-unlock_value
+RPGCore/gradle/wrapper/gradle-wrapper.jar
 ```
-
-현재 `AchievementTitleUnlockService`를 일반화하면 다수 업적을 하나의 구조로 관리할 수 있다.
 
 ---
 
-## 44. 설계 핵심 원칙
+## 32. 비밀정보 관리
 
-RPGCore 0.4.9에서 유지해야 할 핵심 원칙은 다음과 같다.
+실제 DB 설정은 Git에 포함하지 않는다.
 
-1. **RPGCore가 게임 규칙의 최종 소유자다.**
-2. **외부 플러그인은 외형 / 표시 / 보조 기능으로 제한한다.**
-3. **DB 작업은 가능한 한 비동기로 처리한다.**
-4. **Vault 거래는 안전한 상태 전이를 사용한다.**
-5. **UUID를 내부 식별자로 유지한다.**
-6. **display_name은 표시용으로 분리한다.**
-7. **리소스팩은 RPGCore composer가 최종 조합한다.**
-8. **ItemsAdder가 최종 팩을 직접 적용하지 않는다.**
-9. **기존 정상 리소스팩 구조를 임의로 정리하지 않는다.**
-10. **모든 변경은 백업 → 수정 → 빌드 → 배포 → 로그 → 인게임 검증 순서로 진행한다.**
-11. **백업은 `/srv/minecraft/backups`에만 생성한다.**
-12. **외부 / 구매 자산은 GitHub에 무단 공개하지 않는다.**
+운영:
+
+```text
+database.yml
+```
+
+Git:
+
+```text
+database.example.yml
+```
+
+예:
+
+```yaml
+database:
+  host: localhost
+  port: 3306
+  name: rpg
+  username: your_username
+  password: your_password
+```
+
+커밋 전 확인:
+
+```bash
+grep -RIn \
+  --exclude-dir=.git \
+  -Ei 'password|api[_-]?key|access[_-]?token|secret|private[_-]?key|rcon' \
+  .
+```
 
 ---
 
-## 45. 문서 기준
+## 33. Git 개발 흐름
 
-이 문서는 **RPGCore 0.4.9 개발 완료 시점**을 기준으로 작성되었다.
-
-운영 경로:
+기본 흐름:
 
 ```text
-/srv/minecraft
+작업 전 pull
+    ↓
+코드 수정
+    ↓
+로컬 검토
+    ↓
+git diff
+    ↓
+commit
+    ↓
+push
 ```
 
-현재 핵심 버전:
+권장 명령:
+
+```bash
+git status
+git diff
+git add <필요 파일>
+git commit -m "<변경 내용>"
+git push origin main
+```
+
+운영 소스에서는 `git add .`보다 변경 파일을 확인한 뒤 선택적으로 추가하는 방식을 권장한다.
+
+---
+
+## 34. 개발 모듈 목록
+
+0.4.9의 주요 코드 모듈은 다음 정도로만 분류한다.
 
 ```text
-RPGCore 0.4.9
-Paper 26.2
-Java 25
-MariaDB
+Core / Bootstrap
+Database
+Player
+Runtime
+Level
+Class
+Stat
+Combat
+Mana
+Skill
+Item
+Craft
+Dismantle
+Enchant
+Dungeon
+Mob / Boss
+Shop / Economy
+Furniture
+Storage
+HUD
+Placeholder
+Title / Achievement
+Command
+NPC Integration
+Resource Pack Integration
 ```
 
-0.5.x 이후 구조 변경 시 이 문서를 복사하여 버전별 설계 문서로 유지하는 것을 권장한다.
+세부 콘텐츠 규칙은 각 기능 소스와 별도 설계 문서에서 관리한다.
+
+---
+
+## 35. 신규 기능 추가 표준
+
+신규 기능은 다음 구조를 우선 검토한다.
+
+```text
+<feature>/
+├── <Feature>Listener.java
+├── <Feature>Service.java
+├── <Feature>Repository.java
+├── <Feature>State.java
+└── <Feature>Definition.java
+```
+
+모든 기능에 이 파일이 전부 필요한 것은 아니다.
+
+기준:
+
+- 이벤트만 필요 → Listener
+- 규칙 필요 → Service
+- DB 필요 → Repository
+- 상태 필요 → State / DTO
+- 등록형 데이터 → Definition / Registry
+
+---
+
+## 36. DB 기능 추가 표준
+
+DB 기능 추가 시:
+
+```text
+1. 실제 요구 필드 정의
+2. PK / UNIQUE 결정
+3. Repository 작성
+4. Service 작성
+5. 비동기 호출 위치 결정
+6. 실패 처리 정의
+7. 운영 SQL 적용
+8. 실제 row 확인
+```
+
+테이블 변경 전에 기존 schema를 반드시 확인한다.
+
+이미 존재하는 컬럼을 추측으로 다시 추가하지 않는다.
+
+---
+
+## 37. 외부 API 연결 표준
+
+새 외부 플러그인 연동 시:
+
+```text
+플러그인 존재 확인
+    ↓
+API 객체 획득
+    ↓
+RPGCore Adapter / Service 계층에서 사용
+    ↓
+실패 시 기능 비활성화 또는 안전 fallback
+```
+
+가능하면 외부 API 호출을 여러 Listener에 흩뿌리지 않는다.
+
+---
+
+## 38. 오류 처리 원칙
+
+오류는 다음 세 부류로 나눈다.
+
+### 개발 오류
+
+```text
+잘못된 상태
+필수 정의 누락
+코드 계약 위반
+```
+
+명확한 로그를 남긴다.
+
+### 운영 입력 오류
+
+```text
+잘못된 명령 인자
+대상 없음
+잘못된 설정
+```
+
+서버 전체 예외로 확산시키지 않는다.
+
+### 외부 의존성 오류
+
+```text
+Vault provider 없음
+Citizens 없음
+ItemsAdder 실패
+DB 연결 실패
+```
+
+원인을 로그로 남기고 해당 기능만 제한하는 방향을 우선한다.
+
+---
+
+## 39. 테스트 기준
+
+### 컴파일 테스트
+
+```bash
+./gradlew clean build
+```
+
+### 시작 테스트
+
+```text
+플러그인 enable
+DB 연결
+Listener 등록
+외부 hook
+```
+
+### 인게임 최소 테스트
+
+변경한 기능만 우선 검증한다.
+
+### 회귀 테스트
+
+공통 계층을 수정한 경우 연관 시스템을 확인한다.
+
+예:
+
+```text
+DatabaseManager 수정
+→ 접속 / 저장 / 상점 / 칭호 등 DB 사용 기능 확인
+
+ShopEconomyService 수정
+→ 모든 골드 차감 기능 확인
+
+CustomItemFactory 수정
+→ 제작 / 보상 / 상점 / 관리자 지급 확인
+```
+
+---
+
+## 40. 운영과 개발의 분리
+
+개발 소스:
+
+```text
+/srv/minecraft/plugins-source/RPGCore
+```
+
+운영 결과물:
+
+```text
+/srv/minecraft/server/plugins/RPGCore-0.4.9.jar
+```
+
+리소스팩 소스:
+
+```text
+/srv/minecraft/resourcepacks/rpgcore
+```
+
+배포 리소스팩:
+
+```text
+/srv/minecraft/resourcepacks/rpgcore-0.4.9.zip
+```
+
+소스, 빌드 결과물, 운영 결과물의 역할을 섞지 않는다.
+
+---
+
+## 41. 0.4.9 개발 완료 상태
+
+현재 0.4.9는 다음 개발 기반이 구축된 상태이다.
+
+```text
+Paper 26.2 호환
+Java 25 빌드 환경
+Gradle 프로젝트
+MariaDB 계층
+Repository / Service 구조
+Paper Listener 구조
+Command 구조
+외부 플러그인 연동
+비동기 DB 처리
+경제 거래 상태 전이
+진행도 저장 구조
+HUD / Placeholder 연결
+NPC 연결
+리소스팩 composer
+Atlas / Overlay 대응
+운영 배포 절차
+백업 절차
+```
+
+게임 내부 기능은 이 개발 기반 위의 모듈로 취급한다.
+
+---
+
+## 42. 향후 리팩터링 방향
+
+0.5.x 이후에는 필요에 따라 다음 개선을 검토할 수 있다.
+
+### 42.1 공통 DB 추상화
+
+반복되는 Repository 코드를 정리하되, 0.4.9 운영 안정성을 해치지 않는 범위에서 진행한다.
+
+### 42.2 외부 플러그인 Adapter
+
+```text
+VaultAdapter
+CitizensAdapter
+ItemsAdderAdapter
+BetterModelAdapter
+```
+
+형태로 외부 API 경계를 더 명확하게 만들 수 있다.
+
+### 42.3 Feature 단위 등록
+
+RPGCorePlugin의 초기화 코드가 지나치게 커질 경우:
+
+```text
+FeatureModule
+```
+
+형태로 등록 계층을 분리할 수 있다.
+
+### 42.4 공통 진행도 엔진
+
+현재 업적 진행도 구조를 범용 progression 구조로 일반화할 수 있다.
+
+### 42.5 DB migration 관리
+
+수동 SQL 적용이 늘어날 경우 버전별 migration 체계를 도입할 수 있다.
+
+---
+
+## 43. 핵심 유지 원칙
+
+1. **RPGCore가 핵심 데이터와 규칙을 소유한다.**
+2. **Listener는 얇게 유지한다.**
+3. **비즈니스 로직은 Service에 둔다.**
+4. **SQL은 Repository에 둔다.**
+5. **DB 작업은 비동기로 처리한다.**
+6. **Bukkit API는 적절한 메인 스레드에서 호출한다.**
+7. **UUID를 영구 식별자로 사용한다.**
+8. **외부 플러그인은 보조 계층으로 둔다.**
+9. **경제 거래는 상태 전이를 기록한다.**
+10. **리소스팩은 RPGCore 최종 composer가 소유한다.**
+11. **운영 변경 전 `/srv/minecraft/backups`에 백업한다.**
+12. **소스 안에 임시 백업 파일을 남기지 않는다.**
+13. **대규모 구조 변경보다 실제 코드 확인 후 최소 변경을 우선한다.**
+14. **빌드 성공만으로 완료하지 않고 startup log와 인게임 동작을 확인한다.**
+15. **Git에는 개발 산출물만 포함하고 운영 데이터와 비밀정보는 제외한다.**
+
+---
+
+## 44. 문서 기준
+
+이 문서는 **RPGCore 0.4.9 개발 완료 상태**를 기준으로 한다.
+
+```text
+Project Root   /srv/minecraft
+RPGCore        0.4.9
+Paper          26.2
+Java           25
+Database       MariaDB
+```
+
+게임 콘텐츠별 세부 규칙보다 **현재 코드를 안전하게 유지·확장하기 위한 개발 구조**를 우선 문서화한다.
+
+향후 버전에서는 이 문서를 기반으로:
+
+```text
+docs/
+├── ARCHITECTURE.md
+├── DATABASE.md
+├── RESOURCE_PACK.md
+├── DEPLOYMENT.md
+└── MODULES.md
+```
+
+형태로 분리할 수 있다.
