@@ -1,0 +1,11 @@
+plugin:
+  debug: false
+
+server:
+  maximum-level: 99
+
+mana:
+  regeneration-per-second: 2.0
+
+hud:
+  update-ticks: 10

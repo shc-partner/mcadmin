@@ -1,0 +1,91 @@
+name: RPGCore
+version: '${version}'
+main: com.hcs.rpgcore.RPGCorePlugin
+api-version: '26.2'
+description: Core RPG systems for the Paper RPG server
+author: HC
+load: POSTWORLD
+
+depend:
+  - BetterModel
+  - CraftEngine
+  - Vault
+  - EternalEconomy
+
+softdepend:
+  - PlaceholderAPI
+  - Citizens
+  - ItemsAdder
+
+libraries:
+  - com.zaxxer:HikariCP:7.0.2
+  - org.mariadb.jdbc:mariadb-java-client:3.5.8
+
+commands:
+  rpgcore:
+    description: Shows RPGCore status
+    usage: /rpgcore
+    aliases:
+      - rpg
+    permission: rpgcore.command.status
+
+  stats:
+    description: Shows RPG character stats
+    usage: /stats
+    permission: rpgcore.command.stats
+
+  class:
+    description: Selects your RPG class
+    usage: /전직 <전사|마법사>
+    aliases:
+      - 전직
+    permission: rpgcore.command.class
+
+  rpgadmin:
+    description: RPG administration command
+    usage: /rpgadmin
+    permission: rpgcore.admin
+
+  rpgclaim:
+    description: 인벤토리 부족으로 받지 못한 던전 보상을 수령합니다.
+    usage: /보상수령
+    aliases:
+      - 보상수령
+    permission: rpgcore.command.claim
+
+  rpgshop:
+    description: Opens an RPG shop for administration/testing
+    usage: /rpgshop <shopId>
+    permission: rpgcore.admin
+
+  칭호:
+    description: 플레이어 표시 이름으로 칭호를 설정하거나 제거합니다.
+    usage: /칭호 <표시이름> <기존 칭호 이름> 또는 /칭호 <표시이름> 제거
+    permission: rpgcore.admin
+
+  수표:
+    description: 골드 수표를 발행합니다.
+    usage: /수표 <금액>
+    aliases:
+      - check
+
+  rpgpreview:
+    description: Tests equipment preview on Citizens NPC 18
+    usage: /rpgpreview <single|stop>
+    permission: rpgcore.admin
+
+permissions:
+  rpgcore.command.status:
+    default: op
+
+  rpgcore.command.stats:
+    default: true
+
+  rpgcore.command.class:
+    default: true
+
+  rpgcore.command.claim:
+    default: true
+
+  rpgcore.admin:
+    default: op

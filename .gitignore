@@ -1,0 +1,54 @@
+# Gradle / Java
+.gradle/
+**/.gradle/
+build/
+**/build/
+*.class
+
+# Keep Gradle wrapper jar
+*.jar
+!RPGCore/gradle/wrapper/gradle-wrapper.jar
+
+# Secrets
+.env
+*.env
+database.yml
+**/database.yml
+secret.yml
+**/secret.yml
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Minecraft runtime
+server/
+backups/
+logs/
+crash-reports/
+world/
+world_nether/
+world_the_end/
+ops.json
+whitelist.json
+usercache.json
+banned-ips.json
+banned-players.json
+
+# Generated binaries / packs
+resourcepacks/*.zip
+*.zip
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.bak
+*.old
+*.swp
+*~

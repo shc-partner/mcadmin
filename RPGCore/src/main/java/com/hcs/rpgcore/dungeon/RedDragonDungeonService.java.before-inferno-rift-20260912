@@ -1,0 +1,2234 @@
+package com.hcs.rpgcore.dungeon;
+
+import com.hcs.rpgcore.dungeon.reward.DungeonRewardService;
+
+import java.time.Duration;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import io.lumine.mythic.bukkit.MythicBukkit;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.title.Title;
+
+import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.World;
+
+import org.bukkit.boss.BarColor;
+import org.bukkit.boss.BarStyle;
+import org.bukkit.boss.BossBar;
+
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
+
+import org.bukkit.event.entity.CreatureSpawnEvent;
+
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
+
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
+
+
+/*
+ * ============================================================
+ * RED DRAGON DUNGEON
+ * ============================================================
+ *
+ * 권장 레벨:
+ * Lv.80+
+ *
+ * 현재 단계:
+ * - 레이드 기본 흐름
+ * - Drako = MythicMobs + ModelEngine
+ * - 전투 AI = RPGCore 직접 제어
+ * - 전용 전투 패턴 적용
+ *
+ * 신화 보관함 확률:
+ * 15%
+ *
+ * 실제 신화 세트 연결은
+ * 보상 아이템 확정 단계에서 DungeonRewardService에 추가한다.
+ */
+public final class RedDragonDungeonService {
+
+    private static final long CLEAR_EXP =
+            15000L;
+
+
+    public static final String DUNGEON_ID =
+            "red_dragon_dungeon";
+
+    private static final String BOSS_ID =
+            "red_dragon";
+
+    private static final String BOSS_NAME =
+            "[고대의 지배자] 레드 드래곤";
+
+
+    /*
+     * 확정된 신화 보관함 드랍 확률.
+     */
+    public static final double MYTHIC_CHEST_DROP_CHANCE =
+            0.15D;
+
+
+    /*
+     * =========================================================
+     * FULL DUNGEON BOUNDARY
+     * =========================================================
+     *
+     * 레드 드래곤 던전 전체 자연 몹 스폰 차단 영역.
+     *
+     * X -9999869 ~ -9999644
+     * Y 77       ~ 287
+     * Z 999942   ~ 1000247
+     */
+    private static final int DUNGEON_BOUNDARY_MIN_X =
+            -9999869;
+
+    private static final int DUNGEON_BOUNDARY_MAX_X =
+            -9999644;
+
+    private static final int DUNGEON_BOUNDARY_MIN_Y =
+            77;
+
+    private static final int DUNGEON_BOUNDARY_MAX_Y =
+            287;
+
+    private static final int DUNGEON_BOUNDARY_MIN_Z =
+            999942;
+
+    private static final int DUNGEON_BOUNDARY_MAX_Z =
+            1000247;
+
+
+    /*
+     * =========================================================
+     * BATTLE ENTRY TRIGGER
+     * =========================================================
+     *
+     * -9999780 253 1000116
+     * ~
+     * -9999782 253 1000114
+     */
+    private static final int BATTLE_TRIGGER_MIN_X =
+            -9999782;
+
+    private static final int BATTLE_TRIGGER_MAX_X =
+            -9999780;
+
+    private static final int BATTLE_TRIGGER_Y =
+            253;
+
+    private static final int BATTLE_TRIGGER_MIN_Z =
+            1000114;
+
+    private static final int BATTLE_TRIGGER_MAX_Z =
+            1000116;
+
+
+    /*
+     * 전투장 플레이어 이동 위치.
+     */
+    private static final double BATTLE_DESTINATION_X =
+            -9999804.0D;
+
+    private static final double BATTLE_DESTINATION_Y =
+            127.0D;
+
+    private static final double BATTLE_DESTINATION_Z =
+            1000123.0D;
+
+
+    /*
+     * 레드 드래곤 보스 생성 위치.
+     */
+    private static final double BOSS_SPAWN_X =
+            -9999784.0D;
+
+    private static final double BOSS_SPAWN_Y =
+            127.0D;
+
+    private static final double BOSS_SPAWN_Z =
+            1000126.0D;
+
+
+    /*
+     * 원형 전투장의 기준 중심.
+     *
+     * 현재 구축한 반지름 35 원형 장판 기준.
+     */
+    private static final double BATTLE_CENTER_X =
+            -9999784.0D;
+
+    private static final double BATTLE_CENTER_Z =
+            1000126.0D;
+
+    private static final double BATTLE_RADIUS =
+            35.0D;
+
+    private static final double BATTLE_RADIUS_SQUARED =
+            BATTLE_RADIUS
+                    * BATTLE_RADIUS;
+
+
+    /*
+     * 성공 / 실패 공통 퇴장 위치.
+     */
+    private static final double EXIT_X =
+            2529.0D;
+
+    private static final double EXIT_Y =
+            186.0D;
+
+    private static final double EXIT_Z =
+            -1132.0D;
+
+
+    private static final int TRIGGER_CHECK_PERIOD =
+            5;
+
+    private static final int REQUIRED_TRIGGER_TICKS =
+            60;
+
+
+    private final JavaPlugin plugin;
+
+    private final NamespacedKey dungeonIdKey;
+
+    private final NamespacedKey redDragonBossKey;
+
+
+    private final Set<UUID> participants =
+            new HashSet<>();
+
+    private final Set<UUID> activeParticipants =
+            new HashSet<>();
+
+    private final Set<UUID> activeDungeonMobs =
+            new HashSet<>();
+
+
+    private final Set<UUID> pendingExitPlayers =
+            new HashSet<>();
+
+
+    /*
+     * 2차 트리거 3초 유지 상태.
+     */
+    private final Map<UUID, Integer> battleStandingTicks =
+            new HashMap<>();
+
+    private final Map<UUID, Integer> battleLastDisplayedSecond =
+            new HashMap<>();
+
+
+    /*
+     * RPGCore가 직접 생성하려는 정확한 엔티티 하나만
+     * CreatureSpawnEvent에서 통과시킨다.
+     */
+    private boolean authorizedSpawnPending =
+            false;
+
+    private Class<? extends LivingEntity>
+            authorizedSpawnClass;
+
+    private Location authorizedSpawnLocation;
+
+
+    private RedDragonDungeonState state =
+            RedDragonDungeonState.IDLE;
+
+
+    private World dungeonWorld;
+
+    private LivingEntity activeBoss;
+
+    private RedDragonBossController bossController;
+
+    private RedDragonMeteorHazard meteorHazard;
+
+    private RedDragonAreaBurstHazard areaBurstHazard;
+
+    private BossBar bossBar;
+
+    private BukkitTask triggerPollingTask;
+
+    private BukkitTask sequenceTask;
+
+    private BukkitTask bossBarUpdateTask;
+
+    private BukkitTask dungeonExitTask;
+
+    private DungeonRewardService dungeonRewardService;
+
+
+    public RedDragonDungeonService(
+            JavaPlugin plugin
+    ) {
+
+        this.plugin =
+                plugin;
+
+
+        this.dungeonIdKey =
+                new NamespacedKey(
+                        plugin,
+                        "dungeon_id"
+                );
+
+
+        this.redDragonBossKey =
+                new NamespacedKey(
+                        plugin,
+                        "red_dragon_boss"
+                );
+
+
+        startTriggerPolling();
+    }
+
+
+    public void setRewardService(
+            DungeonRewardService dungeonRewardService
+    ) {
+
+        this.dungeonRewardService =
+                dungeonRewardService;
+    }
+
+
+    /*
+     * =========================================================
+     * PLAYER ENTER
+     * =========================================================
+     */
+    public void onPlayerEntered(
+            Player player
+    ) {
+
+        if (player == null) {
+            return;
+        }
+
+
+        UUID uuid =
+                player.getUniqueId();
+
+
+        if (state != RedDragonDungeonState.IDLE) {
+
+            player.sendMessage(
+                    Component.text(
+                            "[던전] 현재 드래곤의 성채는 공략 중입니다.",
+                            NamedTextColor.RED
+                    )
+            );
+
+
+            player.teleport(
+                    createExitLocation(
+                            player.getWorld()
+                    )
+            );
+
+            return;
+        }
+
+
+        participants.add(
+                uuid
+        );
+
+        activeParticipants.add(
+                uuid
+        );
+
+
+        dungeonWorld =
+                player.getWorld();
+
+
+        state =
+                RedDragonDungeonState.WAITING_FOR_BATTLE_TRIGGER;
+
+
+        player.sendMessage(
+                Component.text(
+                        "[던전] ",
+                        NamedTextColor.DARK_PURPLE
+                ).append(
+                        Component.text(
+                                "드래곤의 성채에 입장합니다.",
+                                NamedTextColor.LIGHT_PURPLE
+                        )
+                )
+        );
+
+
+        plugin.getLogger()
+                .info(
+                        "[RedDragonDungeon] "
+                                + player.getName()
+                                + " entered the dragon fortress."
+                );
+    }
+
+
+    public boolean isParticipant(
+            UUID uuid
+    ) {
+
+        return uuid != null
+                && participants.contains(
+                        uuid
+                );
+    }
+
+
+    /*
+     * =========================================================
+     * SECOND TRIGGER
+     * =========================================================
+     */
+    private void startTriggerPolling() {
+
+        triggerPollingTask =
+                plugin.getServer()
+                        .getScheduler()
+                        .runTaskTimer(
+                                plugin,
+                                this::checkProgress,
+                                1L,
+                                TRIGGER_CHECK_PERIOD
+                        );
+    }
+
+
+    private void checkProgress() {
+
+        if (
+                state
+                        == RedDragonDungeonState.WAITING_FOR_BATTLE_TRIGGER
+        ) {
+
+            checkBattleTrigger();
+
+            return;
+        }
+
+
+        if (
+                state
+                        == RedDragonDungeonState.BOSS_FIGHT
+        ) {
+
+            keepBossInsideArena();
+        }
+    }
+
+
+    private void checkBattleTrigger() {
+
+        Player player =
+                firstActivePlayer();
+
+
+        if (player == null) {
+            return;
+        }
+
+
+        UUID uuid =
+                player.getUniqueId();
+
+
+        if (!isInsideBattleTrigger(
+                player.getLocation()
+        )) {
+
+            battleStandingTicks.remove(
+                    uuid
+            );
+
+            battleLastDisplayedSecond.remove(
+                    uuid
+            );
+
+            return;
+        }
+
+
+        int ticks =
+                battleStandingTicks.getOrDefault(
+                        uuid,
+                        0
+                )
+                        + TRIGGER_CHECK_PERIOD;
+
+
+        battleStandingTicks.put(
+                uuid,
+                ticks
+        );
+
+
+        int seconds;
+
+        if (ticks <= 20) {
+
+            seconds = 3;
+
+        } else if (ticks <= 40) {
+
+            seconds = 2;
+
+        } else {
+
+            seconds = 1;
+        }
+
+
+        Integer previous =
+                battleLastDisplayedSecond.get(
+                        uuid
+                );
+
+
+        if (
+                ticks < REQUIRED_TRIGGER_TICKS
+                        &&
+                (
+                        previous == null
+                                ||
+                        previous != seconds
+                )
+        ) {
+
+            battleLastDisplayedSecond.put(
+                    uuid,
+                    seconds
+            );
+
+
+            showSubtitle(
+                    player,
+                    "드래곤의 영역으로 "
+                            + seconds
+                            + "초 후 이동합니다.",
+                    NamedTextColor.LIGHT_PURPLE,
+                    1100L
+            );
+        }
+
+
+        if (ticks < REQUIRED_TRIGGER_TICKS) {
+            return;
+        }
+
+
+        battleStandingTicks.remove(
+                uuid
+        );
+
+        battleLastDisplayedSecond.remove(
+                uuid
+        );
+
+
+        startBattleIntro(
+                player
+        );
+    }
+
+
+    private boolean isInsideBattleTrigger(
+            Location location
+    ) {
+
+        if (location == null) {
+            return false;
+        }
+
+
+        if (
+                dungeonWorld != null
+                        &&
+                location.getWorld()
+                        != dungeonWorld
+        ) {
+
+            return false;
+        }
+
+
+        int x =
+                location.getBlockX();
+
+        int y =
+                location.getBlockY();
+
+        int z =
+                location.getBlockZ();
+
+
+        return x >= BATTLE_TRIGGER_MIN_X
+                && x <= BATTLE_TRIGGER_MAX_X
+                && y == BATTLE_TRIGGER_Y
+                && z >= BATTLE_TRIGGER_MIN_Z
+                && z <= BATTLE_TRIGGER_MAX_Z;
+    }
+
+
+    /*
+     * =========================================================
+     * BOSS INTRO
+     * =========================================================
+     */
+    private void startBattleIntro(
+            Player player
+    ) {
+
+        if (
+                state
+                        != RedDragonDungeonState.WAITING_FOR_BATTLE_TRIGGER
+        ) {
+
+            return;
+        }
+
+
+        if (
+                player == null
+                        ||
+                !player.isOnline()
+                        ||
+                dungeonWorld == null
+        ) {
+
+            return;
+        }
+
+
+        state =
+                RedDragonDungeonState.BOSS_INTRO;
+
+
+        Location destination =
+                new Location(
+                        dungeonWorld,
+                        BATTLE_DESTINATION_X,
+                        BATTLE_DESTINATION_Y,
+                        BATTLE_DESTINATION_Z,
+                        player.getLocation().getYaw(),
+                        player.getLocation().getPitch()
+                );
+
+
+        if (!player.teleport(
+                destination
+        )) {
+
+            state =
+                    RedDragonDungeonState.WAITING_FOR_BATTLE_TRIGGER;
+
+            player.sendMessage(
+                    Component.text(
+                            "[던전] 드래곤의 영역으로 이동하지 못했습니다.",
+                            NamedTextColor.RED
+                    )
+            );
+
+            return;
+        }
+
+
+        player.clearTitle();
+
+
+        showSubtitleToParticipants(
+                "위험한 기운이 느껴집니다.",
+                NamedTextColor.DARK_RED,
+                3000L
+        );
+
+
+        sequenceTask =
+                plugin.getServer()
+                        .getScheduler()
+                        .runTaskLater(
+                                plugin,
+                                () -> {
+
+                                    if (
+                                            state
+                                                    != RedDragonDungeonState.BOSS_INTRO
+                                    ) {
+
+                                        return;
+                                    }
+
+
+                                    showSubtitleToParticipants(
+                                            "고대의 드래곤이 등장합니다.",
+                                            NamedTextColor.RED,
+                                            3000L
+                                    );
+
+
+                                    sequenceTask =
+                                            plugin.getServer()
+                                                    .getScheduler()
+                                                    .runTaskLater(
+                                                            plugin,
+                                                            () -> {
+
+                                                                if (
+                                                                        state
+                                                                                != RedDragonDungeonState.BOSS_INTRO
+                                                                ) {
+
+                                                                    return;
+                                                                }
+
+
+                                                                clearTitles();
+
+                                                                spawnRedDragon();
+
+                                                                sequenceTask =
+                                                                        null;
+                                                            },
+                                                            60L
+                                                    );
+                                },
+                                60L
+                        );
+    }
+
+
+    /*
+     * =========================================================
+     * AUTHORIZED SPAWN
+     * =========================================================
+     */
+    public boolean consumeAuthorizedDungeonSpawn(
+            CreatureSpawnEvent event
+    ) {
+
+        if (!authorizedSpawnPending) {
+            return false;
+        }
+
+
+        if (
+                event.getSpawnReason()
+                        != CreatureSpawnEvent.SpawnReason.CUSTOM
+        ) {
+
+            return false;
+        }
+
+
+        if (
+                authorizedSpawnClass == null
+                        ||
+                !authorizedSpawnClass.isInstance(
+                        event.getEntity()
+                )
+        ) {
+
+            return false;
+        }
+
+
+        if (authorizedSpawnLocation == null) {
+            return false;
+        }
+
+
+        Location actual =
+                event.getLocation();
+
+
+        if (
+                actual.getWorld()
+                        != authorizedSpawnLocation.getWorld()
+        ) {
+
+            return false;
+        }
+
+
+        if (
+                Math.abs(
+                        actual.getX()
+                                - authorizedSpawnLocation.getX()
+                ) > 0.5D
+                        ||
+                Math.abs(
+                        actual.getY()
+                                - authorizedSpawnLocation.getY()
+                ) > 0.5D
+                        ||
+                Math.abs(
+                        actual.getZ()
+                                - authorizedSpawnLocation.getZ()
+                ) > 0.5D
+        ) {
+
+            return false;
+        }
+
+
+        authorizedSpawnPending =
+                false;
+
+        return true;
+    }
+
+
+    /*
+     * =========================================================
+     * DRAKO DEATH VISUAL SPAWN
+     * =========================================================
+     *
+     * Drako 원본 MythicMobs 사망 연출은
+     * 실제 보스가 죽을 때 별도의 HUSK를 같은 위치에 소환한다.
+     *
+     * - Nocsy_Dragon_Boss_Death_Ground
+     * - Nocsy_Dragon_Boss_Falling
+     *
+     * CreatureSpawnEvent 시점에는 MythicMobs ActiveMob 등록이
+     * 아직 끝나지 않았을 수 있으므로 MythicMob ID로 판정하지 않는다.
+     *
+     * 대신:
+     * - CUSTOM spawn
+     * - HUSK
+     * - BOSS_FIGHT 또는 CLEARED
+     * - 실제 Drako 위치에서 매우 가까운 spawn
+     *
+     * 만 사망 연출 후보로 허용한다.
+     */
+    public boolean isAllowedDrakoDeathVisualSpawn(
+            CreatureSpawnEvent event
+    ) {
+
+        if (event == null) {
+            return false;
+        }
+
+
+        if (
+                event.getSpawnReason()
+                        != CreatureSpawnEvent.SpawnReason.CUSTOM
+        ) {
+
+            return false;
+        }
+
+
+        if (
+                !(event.getEntity()
+                        instanceof org.bukkit.entity.Husk)
+        ) {
+
+            return false;
+        }
+
+
+        if (
+                state != RedDragonDungeonState.BOSS_FIGHT
+                        &&
+                state != RedDragonDungeonState.CLEARED
+        ) {
+
+            return false;
+        }
+
+
+        if (activeBoss == null) {
+            return false;
+        }
+
+
+        Location bossLocation =
+                activeBoss.getLocation();
+
+        Location spawnLocation =
+                event.getLocation();
+
+
+        if (
+                bossLocation.getWorld()
+                        != spawnLocation.getWorld()
+        ) {
+
+            return false;
+        }
+
+
+        return Math.abs(
+                bossLocation.getX()
+                        - spawnLocation.getX()
+        ) <= 2.0D
+                &&
+                Math.abs(
+                        bossLocation.getY()
+                                - spawnLocation.getY()
+                ) <= 2.0D
+                &&
+                Math.abs(
+                        bossLocation.getZ()
+                                - spawnLocation.getZ()
+                ) <= 2.0D;
+    }
+
+
+
+    private <T extends LivingEntity>
+    T spawnAuthorizedDungeonEntity(
+            Location location,
+            Class<T> entityClass
+    ) {
+
+        authorizedSpawnPending =
+                true;
+
+        authorizedSpawnClass =
+                entityClass;
+
+        authorizedSpawnLocation =
+                location.clone();
+
+
+        try {
+
+            return dungeonWorld.spawn(
+                    location,
+                    entityClass,
+                    CreatureSpawnEvent
+                            .SpawnReason
+                            .CUSTOM
+            );
+
+        } finally {
+
+            authorizedSpawnPending =
+                    false;
+
+            authorizedSpawnClass =
+                    null;
+
+            authorizedSpawnLocation =
+                    null;
+        }
+    }
+
+
+    /*
+     * =========================================================
+     * TEMPORARY VANILLA ENDER DRAGON
+     * =========================================================
+     */
+    private void clearDungeonLivingEntities() {
+
+        if (dungeonWorld == null) {
+
+            return;
+        }
+
+
+        for (
+                LivingEntity entity
+                : dungeonWorld.getLivingEntities()
+        ) {
+
+            if (entity instanceof Player) {
+
+                continue;
+            }
+
+
+            if (!isInsideDungeonBoundary(
+                    entity.getLocation()
+            )) {
+
+                continue;
+            }
+
+
+            /*
+             * 던전 전투 시작 전에 존재하던
+             * 몬스터 / 동물 / 중립 생명체를 제거한다.
+             *
+             * Drako는 이 메서드 실행 이후 생성된다.
+             */
+            entity.remove();
+        }
+    }
+
+
+    private void spawnRedDragon() {
+
+        if (
+                state
+                        != RedDragonDungeonState.BOSS_INTRO
+        ) {
+
+            return;
+        }
+
+
+        if (dungeonWorld == null) {
+
+            plugin.getLogger()
+                    .severe(
+                            "[RedDragonDungeon] "
+                                    + "Cannot spawn Drako: dungeonWorld is null."
+                    );
+
+            failDungeon();
+
+            return;
+        }
+
+
+        clearDungeonLivingEntities();
+
+
+        Location spawnLocation =
+                new Location(
+                        dungeonWorld,
+                        BOSS_SPAWN_X,
+                        BOSS_SPAWN_Y,
+                        BOSS_SPAWN_Z
+                );
+
+
+        /*
+         * MythicMobs가 생성하는 기반 LivingEntity 하나만
+         * 던전 spawn 차단을 통과시킨다.
+         */
+        authorizedSpawnPending =
+                true;
+
+        authorizedSpawnClass =
+                LivingEntity.class;
+
+        authorizedSpawnLocation =
+                spawnLocation.clone();
+
+
+        org.bukkit.entity.Entity spawned =
+                null;
+
+
+        try {
+
+            spawned =
+                    MythicBukkit.inst()
+                            .getAPIHelper()
+                            .spawnMythicMob(
+                                    "Nocsy_Dragon_Boss",
+                                    spawnLocation
+                            );
+
+        } catch (Exception exception) {
+
+            plugin.getLogger()
+                    .severe(
+                            "[RedDragonDungeon] "
+                                    + "Failed to spawn Nocsy_Dragon_Boss: "
+                                    + exception.getMessage()
+                    );
+
+            exception.printStackTrace();
+
+        } finally {
+
+            authorizedSpawnPending =
+                    false;
+
+            authorizedSpawnClass =
+                    null;
+
+            authorizedSpawnLocation =
+                    null;
+        }
+
+
+        if (!(spawned instanceof LivingEntity boss)) {
+
+            plugin.getLogger()
+                    .severe(
+                            "[RedDragonDungeon] "
+                                    + "Nocsy_Dragon_Boss did not create "
+                                    + "a LivingEntity."
+                    );
+
+            if (spawned != null) {
+
+                spawned.remove();
+            }
+
+            failDungeon();
+
+            return;
+        }
+
+
+        PersistentDataContainer pdc =
+                boss.getPersistentDataContainer();
+
+
+        pdc.set(
+                dungeonIdKey,
+                PersistentDataType.STRING,
+                DUNGEON_ID
+        );
+
+
+        pdc.set(
+                redDragonBossKey,
+                PersistentDataType.STRING,
+                BOSS_ID
+        );
+
+
+        boss.setPersistent(
+                true
+        );
+
+
+        activeBoss =
+                boss;
+
+
+        activeDungeonMobs.clear();
+
+        activeDungeonMobs.add(
+                boss.getUniqueId()
+        );
+
+
+        state =
+                RedDragonDungeonState.BOSS_FIGHT;
+
+
+        createBossBar(
+                boss
+        );
+
+
+        /*
+         * =====================================================
+         * INDEPENDENT METEOR HAZARD
+         * =====================================================
+         *
+         * Drako / MythicMobs AI와 독립적으로
+         * 10초마다 던전 메테오 공격을 실행한다.
+         */
+        meteorHazard =
+                new RedDragonMeteorHazard(
+                        plugin,
+                        activeParticipants,
+                        () ->
+                                state
+                                        == RedDragonDungeonState.BOSS_FIGHT
+                );
+
+        meteorHazard.start();
+
+
+        /*
+         * =====================================================
+         * INDEPENDENT AREA BURST HAZARD
+         * =====================================================
+         *
+         * Drako / MythicMobs AI와 독립적으로
+         * 4초마다 보스 발밑 범위 공격을 실행한다.
+         */
+        areaBurstHazard =
+                new RedDragonAreaBurstHazard(
+                        plugin,
+                        boss,
+                        activeParticipants,
+                        () ->
+                                state
+                                        == RedDragonDungeonState.BOSS_FIGHT
+                );
+
+        areaBurstHazard.start();
+
+
+        /*
+         * =====================================================
+         * DRAKO INTERNAL COMBAT AI
+         * =====================================================
+         *
+         * 이동 / 추적 / 이륙 / 착륙 / 비행 / 공격 선택은
+         * Drako 원본 MythicMobs AI에 맡긴다.
+         *
+         * RedDragonBossController는 현재 전투 제어에 사용하지 않는다.
+         */
+        bossController =
+                null;
+
+
+        plugin.getLogger()
+                .info(
+                        "[RedDragonDungeon] "
+                                + "Drako spawned at "
+                                + BOSS_SPAWN_X
+                                + ", "
+                                + BOSS_SPAWN_Y
+                                + ", "
+                                + BOSS_SPAWN_Z
+                );
+    }
+
+
+    /*
+     * =========================================================
+     * MOB IDENTIFICATION / DEATH
+     * =========================================================
+     */
+    public boolean isDungeonMob(
+            LivingEntity entity
+    ) {
+
+        if (entity == null) {
+            return false;
+        }
+
+
+        String dungeonId =
+                entity.getPersistentDataContainer()
+                        .get(
+                                dungeonIdKey,
+                                PersistentDataType.STRING
+                        );
+
+
+        return DUNGEON_ID.equals(
+                dungeonId
+        );
+    }
+
+
+    public boolean isRedDragon(
+            LivingEntity entity
+    ) {
+
+        if (!isDungeonMob(
+                entity
+        )) {
+
+            return false;
+        }
+
+
+        String bossId =
+                entity.getPersistentDataContainer()
+                        .get(
+                                redDragonBossKey,
+                                PersistentDataType.STRING
+                        );
+
+
+        return BOSS_ID.equals(
+                bossId
+        );
+    }
+
+
+    public void onDungeonMobDeath(
+            LivingEntity entity
+    ) {
+
+        if (!isDungeonMob(
+                entity
+        )) {
+
+            return;
+        }
+
+
+        activeDungeonMobs.remove(
+                entity.getUniqueId()
+        );
+
+
+        if (
+                state == RedDragonDungeonState.BOSS_FIGHT
+                        &&
+                isRedDragon(entity)
+        ) {
+
+            finishBoss();
+        }
+    }
+
+
+    /*
+     * =========================================================
+     * FULL DUNGEON NATURAL SPAWN BOUNDARY
+     * =========================================================
+     */
+    public boolean isInsideDungeonBoundary(
+            Location location
+    ) {
+
+        if (location == null) {
+            return false;
+        }
+
+
+        if (
+                dungeonWorld != null
+                        &&
+                location.getWorld()
+                        != dungeonWorld
+        ) {
+
+            return false;
+        }
+
+
+        int x =
+                location.getBlockX();
+
+        int y =
+                location.getBlockY();
+
+        int z =
+                location.getBlockZ();
+
+
+        return x >= DUNGEON_BOUNDARY_MIN_X
+                && x <= DUNGEON_BOUNDARY_MAX_X
+                && y >= DUNGEON_BOUNDARY_MIN_Y
+                && y <= DUNGEON_BOUNDARY_MAX_Y
+                && z >= DUNGEON_BOUNDARY_MIN_Z
+                && z <= DUNGEON_BOUNDARY_MAX_Z;
+    }
+
+
+    /*
+     * =========================================================
+     * BOSS ARENA BOUNDARY
+     * =========================================================
+     *
+     * Drako의 이동 / 비행 AI 자체는 MythicMobs에 맡긴다.
+     *
+     * RPGCore에서는 보스가 전투장 공간을 벗어나지 않도록
+     * X/Z 범위와 최소/최대 Y만 제한한다.
+     */
+    private void keepBossInsideArena() {
+
+        if (
+                activeBoss == null
+                        ||
+                !activeBoss.isValid()
+                        ||
+                activeBoss.isDead()
+        ) {
+
+            return;
+        }
+
+
+        final double minimumY =
+                127.0D;
+
+        final double maximumY =
+                159.0D;
+
+
+        Location current =
+                activeBoss.getLocation();
+
+
+        double dx =
+                current.getX()
+                        - BATTLE_CENTER_X;
+
+        double dz =
+                current.getZ()
+                        - BATTLE_CENTER_Z;
+
+
+        double distanceSquared =
+                dx * dx
+                        + dz * dz;
+
+
+        boolean outsideHorizontalBoundary =
+                distanceSquared
+                        > BATTLE_RADIUS_SQUARED;
+
+
+        boolean outsideVerticalBoundary =
+                current.getY()
+                        < minimumY
+                        ||
+                current.getY()
+                        > maximumY;
+
+
+        if (
+                !outsideHorizontalBoundary
+                        &&
+                !outsideVerticalBoundary
+        ) {
+
+            return;
+        }
+
+
+        double targetX =
+                outsideHorizontalBoundary
+                        ? BOSS_SPAWN_X
+                        : current.getX();
+
+        double targetZ =
+                outsideHorizontalBoundary
+                        ? BOSS_SPAWN_Z
+                        : current.getZ();
+
+
+        double targetY =
+                Math.max(
+                        minimumY,
+                        Math.min(
+                                maximumY,
+                                current.getY()
+                        )
+                );
+
+
+        activeBoss.teleport(
+                new Location(
+                        activeBoss.getWorld(),
+                        targetX,
+                        targetY,
+                        targetZ,
+                        current.getYaw(),
+                        current.getPitch()
+                )
+        );
+    }
+
+
+    /*
+     * =========================================================
+     * BOSS BAR
+     * =========================================================
+     */
+    private void createBossBar(
+            LivingEntity boss
+    ) {
+
+        removeBossBar();
+
+
+        bossBar =
+                plugin.getServer()
+                        .createBossBar(
+                                BOSS_NAME,
+                                BarColor.RED,
+                                BarStyle.SOLID
+                        );
+
+
+        bossBar.setProgress(
+                1.0D
+        );
+
+        bossBar.setVisible(
+                true
+        );
+
+
+        for (
+                UUID uuid
+                : participants
+        ) {
+
+            Player player =
+                    plugin.getServer()
+                            .getPlayer(
+                                    uuid
+                            );
+
+
+            if (
+                    player == null
+                            ||
+                    !player.isOnline()
+            ) {
+
+                continue;
+            }
+
+
+            bossBar.addPlayer(
+                    player
+            );
+        }
+
+
+        bossBarUpdateTask =
+                plugin.getServer()
+                        .getScheduler()
+                        .runTaskTimer(
+                                plugin,
+                                () -> {
+
+                                    if (
+                                            activeBoss == null
+                                                    ||
+                                            !activeBoss.isValid()
+                                                    ||
+                                            activeBoss.isDead()
+                                    ) {
+
+                                        removeBossBar();
+
+                                        return;
+                                    }
+
+
+                                    double maxHealth =
+                                            activeBoss.getMaxHealth();
+
+
+                                    double progress =
+                                            maxHealth <= 0.0D
+                                                    ? 0.0D
+                                                    :
+                                            Math.max(
+                                                    0.0D,
+                                                    Math.min(
+                                                            1.0D,
+                                                            activeBoss.getHealth()
+                                                                    / maxHealth
+                                                    )
+                                            );
+
+
+                                    if (bossBar != null) {
+
+                                        bossBar.setProgress(
+                                                progress
+                                        );
+                                    }
+                                },
+                                1L,
+                                2L
+                        );
+    }
+
+
+    private void removeBossBar() {
+
+        if (bossBarUpdateTask != null) {
+
+            bossBarUpdateTask.cancel();
+
+            bossBarUpdateTask =
+                    null;
+        }
+
+
+        if (bossBar != null) {
+
+            bossBar.removeAll();
+
+            bossBar =
+                    null;
+        }
+    }
+
+
+    /*
+     * =========================================================
+     * CLEAR
+     * =========================================================
+     */
+    private void finishBoss() {
+
+        if (
+                state
+                        != RedDragonDungeonState.BOSS_FIGHT
+        ) {
+
+            return;
+        }
+
+
+        state =
+                RedDragonDungeonState.CLEARED;
+
+
+        if (meteorHazard != null) {
+
+            meteorHazard.stop();
+
+            meteorHazard =
+                    null;
+        }
+
+
+        if (areaBurstHazard != null) {
+
+            areaBurstHazard.stop();
+
+            areaBurstHazard =
+                    null;
+        }
+
+
+        if (bossController != null) {
+
+            bossController.stop();
+
+            bossController =
+                    null;
+        }
+
+
+        activeBoss =
+                null;
+
+
+        activeDungeonMobs.clear();
+
+
+        removeBossBar();
+
+        clearTitles();
+
+
+        showSubtitleToParticipants(
+                "고대의 드래곤을 처치하셨습니다.",
+                NamedTextColor.GOLD,
+                3000L
+        );
+
+
+        /*
+         * =====================================================
+         * REWARD
+         * =====================================================
+         *
+         * 레드 드래곤 신화 보관함:
+         * 15%
+         *
+         * 보관함 item ID / 세트 구성이 확정되는 단계에서
+         * DungeonRewardService에 실제 지급 메서드를 연결한다.
+         */
+
+
+        if (dungeonRewardService == null) {
+
+            plugin.getLogger()
+                    .severe(
+                            "[RedDragonDungeon] "
+                                    + "DungeonRewardService is null."
+                    );
+
+        } else {
+
+            dungeonRewardService
+                    .rewardDungeonClearExperience(
+                            participants,
+                            CLEAR_EXP
+                    );
+
+            dungeonRewardService
+                    .rewardRedDragonBasicRewards(
+                            participants
+                    );
+
+            dungeonRewardService
+                    .rewardRedDragonMythicChest(
+                            participants
+                    );
+
+            dungeonRewardService
+                    .rewardEnhancementStones(
+                            participants,
+                            4,
+                            0.0D,
+                            0,
+                            2
+                    );
+        }
+
+
+        dungeonExitTask =
+                plugin.getServer()
+                        .getScheduler()
+                        .runTaskLater(
+                                plugin,
+                                () -> {
+
+                                    dungeonExitTask =
+                                            null;
+
+
+                                    if (
+                                            state
+                                                    != RedDragonDungeonState.CLEARED
+                                    ) {
+
+                                        return;
+                                    }
+
+
+                                    clearTitles();
+
+                                    runDungeonExitCountdown(
+                                            5
+                                    );
+                                },
+                                60L
+                        );
+    }
+
+
+    private void runDungeonExitCountdown(
+            int seconds
+    ) {
+
+        if (
+                state
+                        != RedDragonDungeonState.CLEARED
+        ) {
+
+            return;
+        }
+
+
+        if (seconds <= 0) {
+
+            clearTitles();
+
+            teleportParticipantsToExit();
+
+            resetDungeon();
+
+            return;
+        }
+
+
+        NamedTextColor color =
+                seconds >= 4
+                        ? NamedTextColor.YELLOW
+                        : NamedTextColor.RED;
+
+
+        showSubtitleToParticipants(
+                "드래곤의 성채 퇴장까지 "
+                        + seconds
+                        + "초 남았습니다.",
+                color,
+                1100L
+        );
+
+
+        dungeonExitTask =
+                plugin.getServer()
+                        .getScheduler()
+                        .runTaskLater(
+                                plugin,
+                                () -> {
+
+                                    dungeonExitTask =
+                                            null;
+
+                                    runDungeonExitCountdown(
+                                            seconds - 1
+                                    );
+                                },
+                                20L
+                        );
+    }
+
+
+    private void teleportParticipantsToExit() {
+
+        for (
+                UUID uuid
+                : participants
+        ) {
+
+            Player player =
+                    plugin.getServer()
+                            .getPlayer(
+                                    uuid
+                            );
+
+
+            if (
+                    player == null
+                            ||
+                    !player.isOnline()
+            ) {
+
+                continue;
+            }
+
+
+            Location exit =
+                    createExitLocation(
+                            player.getWorld()
+                    );
+
+
+            if (exit != null) {
+
+                player.teleport(
+                        exit
+                );
+            }
+        }
+    }
+
+
+    /*
+     * =========================================================
+     * DEATH / QUIT / FAILURE
+     * =========================================================
+     */
+    public void onParticipantUnavailable(
+            Player player
+    ) {
+
+        if (player == null) {
+            return;
+        }
+
+
+        UUID uuid =
+                player.getUniqueId();
+
+
+        if (!participants.contains(
+                uuid
+        )) {
+
+            return;
+        }
+
+
+        if (
+                state == RedDragonDungeonState.CLEARED
+                        ||
+                state == RedDragonDungeonState.RESETTING
+                        ||
+                state == RedDragonDungeonState.IDLE
+        ) {
+
+            return;
+        }
+
+
+        activeParticipants.remove(
+                uuid
+        );
+
+
+        pendingExitPlayers.add(
+                uuid
+        );
+
+
+        if (!activeParticipants.isEmpty()) {
+            return;
+        }
+
+
+        failDungeon();
+    }
+
+
+    private void failDungeon() {
+
+        if (
+                state == RedDragonDungeonState.IDLE
+                        ||
+                state == RedDragonDungeonState.RESETTING
+        ) {
+
+            return;
+        }
+
+
+        for (
+                UUID uuid
+                : participants
+        ) {
+
+            Player player =
+                    plugin.getServer()
+                            .getPlayer(
+                                    uuid
+                            );
+
+
+            if (
+                    player == null
+                            ||
+                    !player.isOnline()
+            ) {
+
+                continue;
+            }
+
+
+            player.clearTitle();
+
+
+            player.sendMessage(
+                    Component.text(
+                            "[던전] ",
+                            NamedTextColor.DARK_PURPLE
+                    ).append(
+                            Component.text(
+                                    "드래곤의 성채 공략에 실패했습니다.",
+                                    NamedTextColor.RED
+                            )
+                    )
+            );
+        }
+
+
+        plugin.getLogger()
+                .info(
+                        "[RedDragonDungeon] Dungeon failed."
+                );
+
+
+        resetDungeon();
+    }
+
+
+    /*
+     * =========================================================
+     * PENDING EXIT
+     * =========================================================
+     */
+    public boolean consumePendingExit(
+            UUID uuid
+    ) {
+
+        if (uuid == null) {
+            return false;
+        }
+
+
+        return pendingExitPlayers.remove(
+                uuid
+        );
+    }
+
+
+    public Location createExitLocation(
+            World world
+    ) {
+
+        if (world == null) {
+            return null;
+        }
+
+
+        return new Location(
+                world,
+                EXIT_X,
+                EXIT_Y,
+                EXIT_Z
+        );
+    }
+
+
+    /*
+     * =========================================================
+     * RESET
+     * =========================================================
+     */
+    private void resetDungeon() {
+
+        state =
+                RedDragonDungeonState.RESETTING;
+
+
+        if (sequenceTask != null) {
+
+            sequenceTask.cancel();
+
+            sequenceTask =
+                    null;
+        }
+
+
+        if (dungeonExitTask != null) {
+
+            dungeonExitTask.cancel();
+
+            dungeonExitTask =
+                    null;
+        }
+
+
+        removeBossBar();
+
+
+        if (meteorHazard != null) {
+
+            meteorHazard.stop();
+
+            meteorHazard =
+                    null;
+        }
+
+
+        if (areaBurstHazard != null) {
+
+            areaBurstHazard.stop();
+
+            areaBurstHazard =
+                    null;
+        }
+
+
+        if (bossController != null) {
+
+            bossController.stop();
+
+            bossController =
+                    null;
+        }
+
+
+        if (
+                activeBoss != null
+                        &&
+                activeBoss.isValid()
+        ) {
+
+            activeBoss.remove();
+        }
+
+
+        activeBoss =
+                null;
+
+
+        for (
+                UUID uuid
+                : new HashSet<>(
+                        activeDungeonMobs
+                )
+        ) {
+
+            org.bukkit.entity.Entity entity =
+                    plugin.getServer()
+                            .getEntity(
+                                    uuid
+                            );
+
+
+            if (
+                    entity != null
+                            &&
+                    entity.isValid()
+            ) {
+
+                entity.remove();
+            }
+        }
+
+
+        activeDungeonMobs.clear();
+
+        participants.clear();
+
+        activeParticipants.clear();
+
+        battleStandingTicks.clear();
+
+        battleLastDisplayedSecond.clear();
+
+
+        /*
+         * pendingExitPlayers는 지우지 않는다.
+         *
+         * 사망/로그아웃 참가자는
+         * 리스폰/재접속 시 퇴장 좌표로 이동해야 한다.
+         */
+
+
+        dungeonWorld =
+                null;
+
+
+        authorizedSpawnPending =
+                false;
+
+        authorizedSpawnClass =
+                null;
+
+        authorizedSpawnLocation =
+                null;
+
+
+        state =
+                RedDragonDungeonState.IDLE;
+
+
+        plugin.getLogger()
+                .info(
+                        "[RedDragonDungeon] Dungeon reset."
+                );
+    }
+
+
+    /*
+     * =========================================================
+     * COMMON
+     * =========================================================
+     */
+    private Player firstActivePlayer() {
+
+        for (
+                UUID uuid
+                : activeParticipants
+        ) {
+
+            Player player =
+                    plugin.getServer()
+                            .getPlayer(
+                                    uuid
+                            );
+
+
+            if (
+                    player != null
+                            &&
+                    player.isOnline()
+                            &&
+                    !player.isDead()
+            ) {
+
+                return player;
+            }
+        }
+
+
+        return null;
+    }
+
+
+    private void showSubtitleToParticipants(
+            String text,
+            NamedTextColor color,
+            long stayMillis
+    ) {
+
+        for (
+                UUID uuid
+                : participants
+        ) {
+
+            Player player =
+                    plugin.getServer()
+                            .getPlayer(
+                                    uuid
+                            );
+
+
+            if (
+                    player == null
+                            ||
+                    !player.isOnline()
+            ) {
+
+                continue;
+            }
+
+
+            showSubtitle(
+                    player,
+                    text,
+                    color,
+                    stayMillis
+            );
+        }
+    }
+
+
+    private void showSubtitle(
+            Player player,
+            String text,
+            NamedTextColor color,
+            long stayMillis
+    ) {
+
+        Title title =
+                Title.title(
+                        Component.empty(),
+                        Component.text(
+                                text,
+                                color
+                        ),
+                        Title.Times.times(
+                                Duration.ZERO,
+                                Duration.ofMillis(
+                                        stayMillis
+                                ),
+                                Duration.ZERO
+                        )
+                );
+
+
+        player.showTitle(
+                title
+        );
+    }
+
+
+    private void clearTitles() {
+
+        for (
+                UUID uuid
+                : participants
+        ) {
+
+            Player player =
+                    plugin.getServer()
+                            .getPlayer(
+                                    uuid
+                            );
+
+
+            if (
+                    player != null
+                            &&
+                    player.isOnline()
+            ) {
+
+                player.clearTitle();
+            }
+        }
+    }
+}

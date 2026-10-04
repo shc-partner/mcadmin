@@ -1,0 +1,312 @@
+package com.hcs.rpgcore.placeholder;
+
+import com.hcs.rpgcore.RPGCorePlugin;
+import com.hcs.rpgcore.mana.ManaService;
+import com.hcs.rpgcore.hud.HudSnapshot;
+
+import me.clip.placeholderapi.expansion.PlaceholderExpansion;
+
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.entity.Player;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.Locale;
+import java.util.UUID;
+
+public final class RPGCorePlaceholderExpansion
+        extends PlaceholderExpansion {
+
+    private final RPGCorePlugin plugin;
+    private final ManaService manaService;
+
+    public RPGCorePlaceholderExpansion(
+            RPGCorePlugin plugin,
+            ManaService manaService
+    ) {
+        this.plugin = plugin;
+        this.manaService = manaService;
+    }
+
+    @Override
+    public @NotNull String getIdentifier() {
+        return "rpgcore";
+    }
+
+    @Override
+    public @NotNull String getAuthor() {
+        return "HC";
+    }
+
+    @Override
+    public @NotNull String getVersion() {
+        return plugin.getPluginMeta().getVersion();
+    }
+
+    @Override
+    public boolean persist() {
+        return true;
+    }
+
+    @Override
+    public @Nullable String onPlaceholderRequest(
+            Player player,
+            @NotNull String params
+    ) {
+
+        if (player == null) {
+            return "";
+        }
+
+        String key =
+                params.toLowerCase(
+                        Locale.ROOT
+                );
+
+        /*
+         * =====================================================
+         * HP
+         * =====================================================
+         */
+
+        if (key.equals("hp")) {
+
+            return Integer.toString(
+                    floorToInt(
+                            player.getHealth()
+                    )
+            );
+        }
+
+        if (key.equals("max_hp")) {
+
+            AttributeInstance attribute =
+                    player.getAttribute(
+                            Attribute.MAX_HEALTH
+                    );
+
+            double maximumHealth =
+                    attribute != null
+                            ? attribute.getValue()
+                            : player.getHealth();
+
+            return Integer.toString(
+                    floorToInt(
+                            maximumHealth
+                    )
+            );
+        }
+
+
+        /*
+         * =====================================================
+         * MP
+         * =====================================================
+         */
+
+        UUID uuid =
+                player.getUniqueId();
+
+        if (key.equals("mp")) {
+
+            if (!manaService.isInitialized(uuid)) {
+                return "0";
+            }
+
+            return Integer.toString(
+                    floorToInt(
+                            manaService.getCurrentMana(
+                                    uuid
+                            )
+                    )
+            );
+        }
+
+        if (key.equals("max_mp")) {
+
+            if (!manaService.isInitialized(uuid)) {
+                return "0";
+            }
+
+            return Integer.toString(
+                    floorToInt(
+                            manaService.getMaximumMana(
+                                    uuid
+                            )
+                    )
+            );
+        }
+
+
+        /*
+         * =====================================================
+         * RPG PROFILE
+         * =====================================================
+         */
+
+        HudSnapshot snapshot =
+                plugin.getHudService() != null
+                        ? plugin.getHudService().getProfile(
+                                uuid
+                        )
+                        : null;
+
+        if (key.equals("level")) {
+
+            if (snapshot == null) {
+                return "0";
+            }
+
+            return Integer.toString(
+                    snapshot.level()
+            );
+        }
+
+        if (key.equals("class")) {
+
+            if (snapshot == null) {
+                return "초보자";
+            }
+
+            String playerClass =
+                    snapshot.playerClass();
+
+            if (
+                    playerClass == null
+                    || playerClass.isBlank()
+                    || playerClass.equalsIgnoreCase("NONE")
+            ) {
+                return "초보자";
+            }
+
+            if (playerClass.equalsIgnoreCase("WARRIOR")) {
+                return "전사";
+            }
+
+            if (playerClass.equalsIgnoreCase("MAGE")) {
+                return "마법사";
+            }
+
+            return playerClass;
+        }
+
+        if (key.equals("exp")) {
+
+            if (snapshot == null) {
+                return "0";
+            }
+
+            return Long.toString(
+                    Math.max(
+                            0L,
+                            snapshot.experience()
+                    )
+            );
+        }
+
+        if (key.equals("next_exp")) {
+
+            if (
+                    snapshot == null
+                    || plugin.getLevelService() == null
+            ) {
+                return "0";
+            }
+
+            return Long.toString(
+                    Math.max(
+                            0L,
+                            plugin.getLevelService()
+                                    .getRequiredExperience(
+                                            snapshot.level()
+                                    )
+                    )
+            );
+        }
+
+        if (key.equals("air")) {
+            return Integer.toString(
+                    player.getRemainingAir()
+            );
+        }
+
+        if (key.equals("max_air")) {
+            return Integer.toString(
+                    player.getMaximumAir()
+            );
+        }
+
+        if (key.equals("attack")) {
+
+            if (snapshot == null) {
+                return "0";
+            }
+
+            return Integer.toString(
+                    floorToInt(
+                            snapshot.attack()
+                    )
+            );
+        }
+
+        if (key.equals("defense")) {
+
+            if (snapshot == null) {
+                return "0";
+            }
+
+            return Integer.toString(
+                    floorToInt(
+                            snapshot.defense()
+                    )
+            );
+        }
+
+
+        /*
+         * =====================================================
+         * SP
+         *
+         * Minecraft foodLevel: 0 ~ 20
+         * RPGCore SP:          0 ~ 100
+         * =====================================================
+         */
+
+        if (key.equals("sp")) {
+
+            int foodLevel =
+                    Math.max(
+                            0,
+                            Math.min(
+                                    20,
+                                    player.getFoodLevel()
+                            )
+                    );
+
+            return Integer.toString(
+                    foodLevel * 5
+            );
+        }
+
+        if (key.equals("max_sp")) {
+            return "100";
+        }
+
+
+        return null;
+    }
+
+    private static int floorToInt(
+            double value
+    ) {
+
+        return (int)Math.floor(
+                Math.max(
+                        0.0D,
+                        value
+                )
+        );
+    }
+}
