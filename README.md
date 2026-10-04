@@ -742,25 +742,7 @@ PRIMARY KEY(player_uuid, title_id)
 
 ## 24. 기존 칭호
 
-대표 칭호:
-
-### 고인물
-
-```text
-title_id      level_80
-조건          Lv.80 이상
-등급          전설
-unlock_type   level_at_least
-```
-
-### 썩은물
-
-```text
-title_id      level_90
-조건          Lv.90 이상
-등급          신화
-unlock_type   level_at_least
-```
+칭호 예시:
 
 ### 재벌
 
@@ -769,16 +751,6 @@ title_id      wealthy_10m
 조건          10,000,000 골드 이상 보유
 등급          전설
 unlock_type   balance_at_least
-```
-
-### 용살자
-
-```text
-title_id      dragon_slayer
-조건          Red Dragon 던전 클리어
-등급          신화
-unlock_type   dungeon_clear
-```
 
 ---
 
