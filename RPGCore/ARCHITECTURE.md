@@ -14,7 +14,7 @@ Repository
 MariaDB
 ```
 
-표시나 Bukkit 상태 변경이 필요하면 DB 작업 후 메인 스레드로 돌아옵니다.
+표시나 Bukkit 상태 변경이 필요하면 DB 작업 후 메인 스레드로 돌아온다.
 
 ## 2. Listener
 
