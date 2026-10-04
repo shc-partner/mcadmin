@@ -8,7 +8,7 @@ Database:
 MariaDB
 ```
 
-RPGCore는 기능별 Repository를 통해 DB에 접근합니다.
+RPGCore는 기능별 Repository를 통해 DB에 접근한다.
 
 ## 2. 식별 원칙
 
@@ -18,20 +18,20 @@ player_name   계정명
 display_name  표시용 이름
 ```
 
-내부 식별과 DB 관계는 UUID를 기준으로 유지합니다.
+내부 식별과 DB 관계는 UUID를 기준으로 유지한다.
 
 ## 3. Repository 규칙
 
-- SQL은 Repository에 둡니다.
-- Listener에서 SQL을 직접 실행하지 않습니다.
-- PreparedStatement를 사용합니다.
-- PK / UNIQUE KEY를 활용해 중복을 방지합니다.
-- 반복 실행 가능성이 있는 INSERT는 idempotent하게 설계합니다.
-- Bukkit 객체는 DB 비동기 스레드에서 직접 변경하지 않습니다.
+- SQL은 Repository에 둔다.
+- Listener에서 SQL을 직접 실행하지 않는다.
+- PreparedStatement를 사용한다.
+- PK / UNIQUE KEY를 활용해 중복을 방지한다.
+- 반복 실행 가능성이 있는 INSERT는 idempotent하게 설계한다.
+- Bukkit 객체는 DB 비동기 스레드에서 직접 변경하지 않는다.
 
 ## 4. 주요 데이터 영역
 
-현재 DB는 다음 범주의 데이터를 저장합니다.
+현재 DB는 다음 범주의 데이터를 저장한다.
 
 ```text
 플레이어 기본 데이터
@@ -48,7 +48,7 @@ display_name  표시용 이름
 기타 복구 / pending 데이터
 ```
 
-세부 테이블 SQL은 실제 운영 DB schema를 기준으로 관리합니다.
+세부 테이블 SQL은 실제 운영 DB schema를 기준으로 관리한다.
 
 ## 5. 진행도 공통 구조
 
@@ -74,7 +74,7 @@ updated_at
 (player_uuid, progress_type, progress_target)
 ```
 
-이 구조는 향후 공통 progression 엔진으로 일반화할 수 있습니다.
+이 구조는 향후 공통 progression 엔진으로 일반화할 수 있다.
 
 ## 6. 스키마 변경
 
@@ -89,4 +89,4 @@ DB 수정 전 순서:
 → 테스트
 ```
 
-이미 존재하는 컬럼을 추측으로 다시 추가하지 않습니다.
+이미 존재하는 컬럼을 추측으로 다시 추가하지 않는다.

@@ -64,9 +64,9 @@ NoSuchMethodError 없음
 
 ## 5. 배포 완료 기준
 
-`BUILD SUCCESSFUL`만으로 완료 처리하지 않습니다.
+`BUILD SUCCESSFUL`만으로 완료 처리하지 않는다.
 
-다음까지 확인해야 합니다.
+다음까지 확인해야 한다.
 
 ```text
 컴파일 성공

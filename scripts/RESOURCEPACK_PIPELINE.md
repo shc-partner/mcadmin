@@ -14,7 +14,7 @@
 /srv/minecraft/resourcepacks/rpgcore-0.4.9.zip
 ```
 
-RPGCore가 최종 리소스팩의 소유자입니다.
+RPGCore가 최종 리소스팩의 소유자이다.
 
 ## 2. 관리 스크립트
 
@@ -48,7 +48,7 @@ server.properties 갱신
 
 ## 4. ItemsAdder
 
-ItemsAdder는 최종 팩을 직접 배포하지 않습니다.
+ItemsAdder는 최종 팩을 직접 배포하지 않는다.
 
 사용:
 
@@ -56,7 +56,7 @@ ItemsAdder는 최종 팩을 직접 배포하지 않습니다.
 /iazip --uncompressed --apply-to none
 ```
 
-그 결과에서 필요한 리소스를 검증 후 RPGCore source pack으로 병합합니다.
+그 결과에서 필요한 리소스를 검증 후 RPGCore source pack으로 병합한다.
 
 금지:
 
@@ -96,4 +96,4 @@ ia_overlay_26_2_plus
 /srv/minecraft/backups/resourcepack-redeploy/<timestamp>
 ```
 
-최종 ZIP과 관련 설정을 백업한 뒤 재배포합니다.
+최종 ZIP과 관련 설정을 백업한 뒤 재배포한다.

@@ -18,13 +18,13 @@ MariaDB
 
 ## 2. Listener
 
-Listener는 Paper 이벤트를 수신하고 최소한의 조건 확인 후 Service를 호출합니다.
+Listener는 Paper 이벤트를 수신하고 최소한의 조건 확인 후 Service를 호출한다.
 
-Listener에 SQL이나 긴 비즈니스 로직을 직접 넣지 않습니다.
+Listener에 SQL이나 긴 비즈니스 로직을 직접 넣지 않는다.
 
 ## 3. Service
 
-Service는 기능의 핵심 규칙과 상태 전이를 담당합니다.
+Service는 기능의 핵심 규칙과 상태 전이를 담당한다.
 
 주요 역할:
 
@@ -36,7 +36,7 @@ Service는 기능의 핵심 규칙과 상태 전이를 담당합니다.
 
 ## 4. Repository
 
-Repository는 DB 접근을 담당합니다.
+Repository는 DB 접근을 담당한다.
 
 ```text
 SELECT
@@ -46,7 +46,7 @@ DELETE
 상태 전이
 ```
 
-플레이어 메시지, GUI, 월드 변경은 Repository에서 처리하지 않습니다.
+플레이어 메시지, GUI, 월드 변경은 Repository에서 처리하지 않는다.
 
 ## 5. Factory / Registry / State
 
@@ -73,9 +73,9 @@ Service
 Listener / Command
 ```
 
-필요한 의존성만 생성자로 전달합니다.
+필요한 의존성만 생성자로 전달한다.
 
-하위 Service가 `RPGCorePlugin` 전체를 무조건 참조하는 구조는 피합니다.
+하위 Service가 `RPGCorePlugin` 전체를 무조건 참조하는 구조는 피한다.
 
 ## 7. 비동기 처리
 
@@ -114,11 +114,11 @@ ItemsAdder      리소스 생성 보조
 Mythic*         몹 / 방어구 표현 및 보조
 ```
 
-외부 플러그인이 RPGCore 핵심 DB의 원본이 되지 않도록 유지합니다.
+외부 플러그인이 RPGCore 핵심 DB의 원본이 되지 않도록 유지한다.
 
 ## 9. 안전한 거래 상태
 
-경제 기능은 상태 전이를 DB에 기록합니다.
+경제 기능은 상태 전이를 DB에 기록한다.
 
 ```text
 PREPARED

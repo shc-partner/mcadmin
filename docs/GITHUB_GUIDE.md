@@ -33,7 +33,7 @@ resourcepacks/*.zip
 *.log
 ```
 
-Gradle wrapper JAR은 예외적으로 저장소에 포함할 수 있습니다.
+Gradle wrapper JAR은 예외적으로 저장소에 포함할 수 있다.
 
 ```text
 RPGCore/gradle/wrapper/gradle-wrapper.jar
@@ -52,4 +52,4 @@ git diff
 grep -RIn   --exclude-dir=.git   -Ei 'password|api[_-]?key|access[_-]?token|secret|private[_-]?key|rcon'   .
 ```
 
-운영 소스에서는 `git add .`보다 변경 파일을 확인한 뒤 필요한 파일만 추가하는 방식을 권장합니다.
+운영 소스에서는 `git add .`보다 변경 파일을 확인한 뒤 필요한 파일만 추가하는 방식을 권장한다.
